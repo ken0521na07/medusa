@@ -72,6 +72,60 @@
         </div>
       </div>
     </div>
+    <div id="puzzle-modal" class="modal-wrapper" style="display: none">
+      <div class="modal-content puzzle-modal-content">
+        <div id="puzzle-page-1">
+          <header class="modal-header">
+            <h3>謎</h3>
+            <button id="puzzle-close-btn" class="close-btn">×</button>
+          </header>
+          <ul id="puzzle-set-list" class="info-list"></ul>
+        </div>
+
+        <div id="puzzle-page-2" style="display: none">
+          <header class="modal-header">
+            <button id="puzzle-back-btn" class="back-btn">←</button>
+            <h4 id="puzzle-grid-title"></h4>
+          </header>
+          <!-- これがないと2ページ目に画像を描画できません -->
+          <div id="puzzle-grid"></div>
+
+          <!-- 下に縦に並べる2枚の画像（初期は非表示） -->
+          <div id="puzzle-bottom-images" style="display: none">
+            <img id="puzzle-bottom-1" src="" alt="bottom1" />
+            <img id="puzzle-bottom-2" src="" alt="bottom2" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- puzzle popup (static in HTML) -->
+    <div
+      id="puzzle-popup-overlay"
+      class="puzzle-popup-overlay"
+      style="display: none"
+    >
+      <div class="puzzle-popup" role="dialog" aria-modal="true">
+        <div class="puzzle-popup-image-wrap">
+          <img id="puzzle-popup-image" src="" alt="puzzle" />
+        </div>
+        <div class="puzzle-popup-form">
+          <input
+            id="puzzle-popup-input"
+            class="puzzle-answer-input"
+            type="text"
+            placeholder="解答を入力"
+          />
+          <button id="puzzle-popup-submit" class="puzzle-submit-btn">
+            送信
+          </button>
+        </div>
+        <button id="puzzle-popup-close" class="puzzle-popup-close">
+          閉じる
+        </button>
+      </div>
+    </div>
+
     <script src="game.js"></script>
   </body>
 </html>

@@ -145,7 +145,8 @@ html {
 .info-modal-content {
   width: 90%;
   max-width: 420px;
-  height: 70%;
+  // height: 70%;
+  min-height: 70%;
   display: flex;
   flex-direction: column;
 }
@@ -190,3 +191,299 @@ html {
   padding: 10px;
 }
 /* ▲▲▲ 情報モーダル用のスタイルここまで ▲▲▲ */
+
+/* style.scss 内の謎モーダル用スタイルを、以下の内容に丸ごと差し替えてください */
+
+/* ▼▼▼ 謎モーダル用のスタイル (修正版) ▼▼▼ */
+.puzzle-modal-content {
+  width: 90%;
+  max-width: 420px;
+  min-height: 70%;
+  // ▼▼▼ 追加 ▼▼▼
+  // 中の要素をFlexboxで管理する
+  display: flex;
+  flex-direction: column;
+}
+
+// ▼▼▼ 追加 ▼▼▼
+// ページ自体もFlexboxアイテムとして設定
+#puzzle-page-1,
+#puzzle-page-2 {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+#puzzle-grid {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  grid-auto-rows: auto;
+  gap: 10px;
+  justify-content: center;
+  align-items: start;
+  padding: 8px;
+}
+
+/* ↓ 追加: 下部の縦並び画像 */
+#puzzle-bottom-images {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-start;
+  margin-top: 12px;
+  padding: 6px;
+}
+
+/* 画像の大きさは必要に応じて調整してください */
+#puzzle-bottom-images img {
+  display: block;
+  max-width: 100%;
+  width: 200px; /* 必要なら変更 */
+  height: auto;
+  border-radius: 6px;
+  background: #eee;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+/* ピース要素は画像を中央に置くコンテナにする */
+.puzzle-piece {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 6px;
+  background-color: #eaeaea;
+  border-radius: 6px;
+  cursor: pointer;
+  /* 幅の上限は親の幅に合わせる */
+  max-width: 180px;
+}
+
+/* img を直接扱う */
+.puzzle-piece img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* ロック時の見た目 */
+.puzzle-piece.locked img {
+  filter: grayscale(100%) opacity(0.6);
+  cursor: not-allowed;
+}
+
+/* ピースのスタイルは既に定義済み */
+
+/* ロック時はクリック不可に見せる（pointer-events 保険） */
+.puzzle-piece.locked {
+  pointer-events: none;
+  opacity: 0.9;
+}
+
+/* 正解（解放済み）をグレーアウト表示 */
+.puzzle-piece.solved img {
+  filter: grayscale(100%) opacity(0.6);
+  cursor: default;
+}
+
+/* puzzle popup */
+.puzzle-popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: none;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+  padding: 20px;
+}
+
+/* 最大高さを vh で制限してはみ出しを防ぐ */
+.puzzle-popup {
+  background: #f8f8f8;
+  border-radius: 8px;
+  padding: 12px;
+  max-width: 480px;
+  width: 100%;
+  /* 画面高さに対する割合で最大化（ヘッダー等を含む） */
+  max-height: 80vh;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* 内部がはみ出したらスクロール */
+  overflow: auto;
+}
+
+/* 画像ラップに高さ制限と overflow */
+.puzzle-popup-image-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #ddd;
+  padding: 10px;
+  border-radius: 6px;
+  /* 画像領域を modal 高さに対して制限 */
+  max-height: calc(80vh - 160px); /* modal の max-height に合わせて調整 */
+  overflow: hidden;
+}
+
+/* 画像は領域にフィットさせる（縦横どちらでもはみ出さない） */
+.puzzle-popup-image-wrap img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+/* 小さい画面向け微調整 */
+@media (max-width: 420px) {
+  .puzzle-popup {
+    max-width: 92%;
+    padding: 10px;
+    max-height: 86vh;
+  }
+  .puzzle-popup-image-wrap {
+    max-height: calc(86vh - 160px);
+  }
+}
+
+/* 既存の .puzzle-popup-form / input 周りを下記に置き換えてください */
+.puzzle-popup-form {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  align-items: center;
+  justify-content: center; /* 横方向中央揃え */
+  width: 100%;
+  max-width: 420px; /* フォーム幅の上限 */
+  margin: 0 auto; /* モーダル内で中央配置 */
+  padding: 6px 8px;
+  box-sizing: border-box;
+}
+
+/* 入力欄を伸ばしてボタンと並べる */
+.puzzle-answer-input {
+  flex: 1 1 auto;
+  min-width: 140px;
+  max-width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 14px;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+/* 送信ボタンは幅固定で隣に置く */
+.puzzle-submit-btn {
+  flex: 0 0 auto;
+}
+
+/* 小さい画面では縦並びにして中央寄せ */
+@media (max-width: 420px) {
+  .puzzle-popup-form {
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+  }
+  .puzzle-submit-btn {
+    width: 100%;
+  }
+  .puzzle-answer-input {
+    width: 100%;
+  }
+}
+
+/* --- ここから下は共通スタイルやリセットなど --- */
+* {
+  box-sizing: border-box;
+}
+
+ul,
+ol {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+/* ↓ ここから追加: モーダル／ポップアップのボタン表示を復元する */
+.modal-content .close-btn,
+.modal-content .back-btn {
+  /* small icon-like buttons in headers */
+  background: transparent;
+  border: none;
+  color: $dark-text;
+  font-size: 1.4em;
+  padding: 6px;
+  cursor: pointer;
+}
+
+/* puzzle popup / modal action buttons */
+.puzzle-submit-btn,
+.puzzle-popup-close,
+.puzzle-close-btn,
+.puzzle-modal-content .close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: none;
+  color: $light-text;
+  background: $primary-color;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  transition: transform 0.08s ease, opacity 0.08s ease;
+}
+
+/* 閉じる系は目立たせすぎない色に */
+.puzzle-popup-close,
+.puzzle-modal-content .close-btn {
+  background: #888;
+}
+
+/* hover / active */
+.puzzle-submit-btn:not([disabled]):hover,
+.puzzle-popup-close:hover,
+.puzzle-modal-content .close-btn:hover {
+  transform: translateY(-1px);
+  opacity: 0.95;
+}
+
+/* disabled 見た目 */
+.puzzle-submit-btn[disabled] {
+  background: #bbb;
+  color: #666;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ヘッダーの小さい閉じる/戻るボタンは別扱いしたければ上書き可能 */
+.back-btn {
+  font-size: 1.1em;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.06);
+  color: $dark-text;
+}
+
+/* フォーム内の送信ボタン幅調整 */
+.puzzle-popup-form .puzzle-submit-btn {
+  flex: 0 0 auto;
+}
