@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <title>Pixi.js v7.4.0 機能テスト</title>
+  </head>
+  <body>
+    <h1>Pixi.js v7.4.0の機能テスト</h1>
+    <p>デベロッパーツール（F12）のコンソールを開いて結果を確認してください。</p>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.0/pixi.min.js"></script>
+
+    <script>
+      console.log("--- Pixi.js 機能テスト開始 ---");
+
+      // 1. 読み込まれたPixi.jsのバージョンを確認します
+      console.log("読み込まれたPixi.jsのバージョン:", PIXI.VERSION);
+
+      // 2. Applicationインスタンスを作成します
+      const app = new PIXI.Application();
+      console.log("作成されたappインスタンス:", app);
+
+      // 3. appインスタンスに init メソッドが存在し、それが関数であるかを確認します
+      console.log("app.init は関数ですか？:", typeof app.init === "function");
+
+      console.log("--- テスト終了 ---");
+    </script>
+  </body>
+</html>

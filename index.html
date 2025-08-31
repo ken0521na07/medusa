@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <title>2D Game</title>
+    <link rel="stylesheet" href="./css/style.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.0/pixi.min.js"></script>
+  </head>
+  <body>
+    <div id="game-wrapper">
+      <header class="ui-area header">
+        <a href="https://example.com/hint" target="_blank" class="ui-button"
+          >HINT</a
+        >
+        <div id="timer" class="timer">TIME 00:00</div>
+      </header>
+
+      <div id="game-canvas"></div>
+
+      <footer class="ui-area footer">
+        <div class="left-controls">
+          <div class="action-buttons">
+            <button id="info-btn" class="ui-button">情報</button>
+            <button id="puzzle-btn" class="ui-button">謎</button>
+            <button id="item-btn" class="ui-button">呪具</button>
+          </div>
+          <div class="d-pad">
+            <button id="up-btn">▲</button>
+            <div>
+              <button id="left-btn">◀</button>
+              <button id="right-btn">▶</button>
+            </div>
+            <button id="down-btn">▼</button>
+          </div>
+        </div>
+        <div class="right-controls">
+          <button id="action-a-btn">A</button>
+        </div>
+      </footer>
+    </div>
+
+    <div id="keyword-modal" class="modal-wrapper" style="display: none">
+      <div class="modal-content">
+        <h3>呪文入力</h3>
+        <input type="text" id="keyword-input" />
+        <button id="keyword-submit-btn">決定</button>
+        <button class="close-btn">閉じる</button>
+      </div>
+    </div>
+    <div id="info-modal" class="modal-wrapper" style="display: none">
+      <div class="modal-content info-modal-content">
+        <div id="info-page-1">
+          <header class="modal-header">
+            <h3>情報</h3>
+            <button id="info-close-btn" class="close-btn">×</button>
+          </header>
+          <ul id="info-list" class="info-list"></ul>
+        </div>
+
+        <div id="info-page-2" style="display: none">
+          <header class="modal-header">
+            <button id="info-back-btn" class="back-btn">←</button>
+          </header>
+          <div id="info-detail">
+            <h4 id="info-detail-title"></h4>
+            <p id="info-detail-content"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script src="game.js"></script>
+  </body>
+</html>
