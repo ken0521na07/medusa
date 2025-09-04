@@ -12,6 +12,10 @@ export function showCustomAlert(
   const closeBtn = document.getElementById("custom-alert-close");
   if (!overlay || !textEl) return;
   textEl.textContent = message + "";
+  // debug: always log alerts to console for easier testing
+  try {
+    console.log("[customAlert] show:", message);
+  } catch (e) {}
   // ensure overlay is on top
   try {
     overlay.style.zIndex = 20000;
@@ -24,6 +28,9 @@ export function showCustomAlert(
     // cleanup handlers
     overlay.onclick = null;
     if (closeBtn) closeBtn.onclick = null;
+    try {
+      console.log("[customAlert] closed");
+    } catch (e) {}
     if (onClose) onClose();
   };
 

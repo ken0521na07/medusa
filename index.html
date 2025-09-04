@@ -22,23 +22,34 @@
       <div id="game-canvas"></div>
 
       <footer class="ui-area footer">
-        <div class="left-controls">
+        <!-- 上: 魔法入力欄 と 情報/謎/魔法 の3ボタン（フッターの上部に配置） -->
+        <div class="top-controls">
+          <div id="magic-input-wrap">
+            <input id="magic-input-text" type="text" placeholder="魔法入力欄" />
+            <button id="magic-input-submit" class="ui-button">送信</button>
+          </div>
           <div class="action-buttons">
             <button id="info-btn" class="ui-button">情報</button>
             <button id="puzzle-btn" class="ui-button">謎</button>
-            <button id="item-btn" class="ui-button">呪具</button>
-          </div>
-          <div class="d-pad">
-            <button id="up-btn">▲</button>
-            <div>
-              <button id="left-btn">◀</button>
-              <button id="right-btn">▶</button>
-            </div>
-            <button id="down-btn">▼</button>
+            <button id="item-btn" class="ui-button">魔法</button>
           </div>
         </div>
-        <div class="right-controls">
-          <button id="action-a-btn">A</button>
+
+        <!-- 下: 左右に分かれる領域（左に d-pad、右に A ボタン） -->
+        <div class="bottom-controls">
+          <div class="left-controls">
+            <div class="d-pad">
+              <button id="up-btn">▲</button>
+              <div>
+                <button id="left-btn">◀</button>
+                <button id="right-btn">▶</button>
+              </div>
+              <button id="down-btn">▼</button>
+            </div>
+          </div>
+          <div class="right-controls">
+            <button id="action-a-btn">A</button>
+          </div>
         </div>
       </footer>
     </div>

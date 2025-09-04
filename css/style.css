@@ -49,15 +49,70 @@ html {
   width: 100%;
   height: auto;
 }
+@media (max-height: 700px) {
+  #game-wrapper #game-canvas {
+    flex-grow: 0;
+    height: calc(100vh - 160px);
+    max-height: calc(100vh - 120px);
+    overflow: hidden;
+  }
+  #game-wrapper canvas {
+    max-height: 100%;
+    width: auto;
+  }
+}
+@media (max-height: 640px) {
+  #game-wrapper #game-canvas {
+    height: calc(100vh - 180px);
+    max-height: calc(100vh - 140px);
+  }
+}
+@media (max-height: 560px) {
+  #game-wrapper #game-canvas {
+    height: calc(100vh - 200px);
+    max-height: calc(100vh - 160px);
+  }
+}
+@media (max-height: 480px) {
+  #game-wrapper #game-canvas {
+    height: calc(100vh - 220px);
+    max-height: calc(100vh - 180px);
+  }
+}
 #game-wrapper .footer {
+  /* footer 全体を縦方向に並べ、画面幅に対して中央寄せ */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+}
+#game-wrapper .footer .top-controls {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+}
+#game-wrapper .footer .bottom-controls {
+  width: 100%;
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
+  align-items: center;
+  padding: 6px 12px;
+  box-sizing: border-box;
+}
+#game-wrapper .footer .left-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 #game-wrapper .footer .left-controls .action-buttons {
   display: flex;
   gap: 5px;
-  margin-bottom: 10px;
+  margin-bottom: 0;
+  justify-content: center;
 }
 #game-wrapper .footer .left-controls .d-pad {
   display: flex;
@@ -487,5 +542,29 @@ button {
 
 /* フォーム内の送信ボタン幅調整 */
 .puzzle-popup-form .puzzle-submit-btn {
+  flex: 0 0 auto;
+}
+
+#magic-input-wrap {
+  width: 100%;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+  box-sizing: border-box;
+  padding: 0 8px;
+}
+
+#magic-input-text {
+  flex: 1 1 auto;
+  min-width: 140px;
+  max-width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+}
+
+#magic-input-submit {
   flex: 0 0 auto;
 }/*# sourceMappingURL=style.css.map */

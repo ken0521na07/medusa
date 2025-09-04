@@ -169,6 +169,115 @@ export async function setupUI() {
       );
     });
 
+  // 魔法入力欄のロジック
+  const magicInput = document.getElementById("magic-input-text");
+  const magicSubmit = document.getElementById("magic-input-submit");
+  if (magicSubmit && magicInput) {
+    const accepted = ["ぱいきじ", "パイ生地", "パイキジ", "ぱい 生地"];
+
+    const normalize = (s) => (s || "").replace(/\s+/g, "").trim();
+
+    const checkMagic = () => {
+      const raw = normalize(magicInput.value);
+      // simple matching: accept any of accepted entries (case/width insensitive not fully handled)
+      const ok = accepted.some((a) => raw === normalize(a));
+      const player = window.__playerInstance;
+      const x = player ? player.gridX : null;
+      const y = player ? player.gridY : null;
+
+      // debug info: always log and show a debug alert so user can see what's happening
+      console.log(
+        "[magic] input=",
+        magicInput.value,
+        "normalized=",
+        raw,
+        "match=",
+        ok,
+        "player=",
+        x,
+        y
+      );
+
+      if (ok && x === 5 && y === 5) {
+        try {
+          showCustomAlert("魔法が唱えられた！正解です。");
+        } catch (e) {
+          try {
+            window.alert("魔法が唱えられた！正解です。");
+          } catch (e2) {}
+        }
+      } else if (!ok) {
+        // 入力自体が間違っている場合
+        const msg = "呪文が正しくないようだ";
+        console.log("[magic] wrong-spell:", raw);
+        try {
+          showCustomAlert(msg);
+        } catch (e) {
+          try {
+            window.alert(msg);
+          } catch (e2) {}
+        }
+      } else {
+        // 入力は正しいが場所が違う場合
+        const msg = "正しい魔法陣の上で唱えよう";
+        console.log("[magic] correct-spell-wrong-place: player=", x, y);
+        try {
+          showCustomAlert(msg);
+        } catch (e) {
+          try {
+            window.alert(msg);
+          } catch (e2) {}
+        }
+      }
+    };
+
+    // IME 対応: composition 中は Enter を送信しない、compositionend 直後の Enter を無視
+    let _isComposing = false;
+    let _ignoreNextEnter = false;
+    magicInput.addEventListener("compositionstart", () => {
+      _isComposing = true;
+    });
+    magicInput.addEventListener("compositionend", () => {
+      _isComposing = false;
+      _ignoreNextEnter = true;
+      setTimeout(() => {
+        _ignoreNextEnter = false;
+      }, 100);
+    });
+
+    magicSubmit.addEventListener("click", checkMagic);
+    magicInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        console.log(
+          "[magic] keydown Enter, isComposing=",
+          _isComposing,
+          "e.isComposing=",
+          e.isComposing,
+          "_ignoreNextEnter=",
+          _ignoreNextEnter
+        );
+        if (_isComposing || _ignoreNextEnter || e.isComposing) return;
+        e.preventDefault();
+        checkMagic();
+      }
+    });
+    // keyup fallback for environments where keydown may be swallowed by IME
+    magicInput.addEventListener("keyup", (e) => {
+      if (e.key === "Enter") {
+        console.log(
+          "[magic] keyup Enter, isComposing=",
+          _isComposing,
+          "e.isComposing=",
+          e.isComposing,
+          "_ignoreNextEnter=",
+          _ignoreNextEnter
+        );
+        if (_isComposing || _ignoreNextEnter || e.isComposing) return;
+        checkMagic();
+      }
+    });
+  }
+
   const infoClose = document.getElementById("info-close-btn");
   if (infoClose)
     infoClose.addEventListener("click", () =>

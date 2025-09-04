@@ -64,17 +64,79 @@ html {
     height: auto; // 縦横比を維持したまま高さを自動調整
   }
 
+  // 画面高さが小さい場合は map（#game-canvas）領域を縮めて
+  // 下部 UI（footer）の全体が画面に収まるようにする
+  // ※ footer の高さは動的だが、いくつかの閾値で段階的に縮小することで対応
+  @media (max-height: 700px) {
+    #game-canvas {
+      flex-grow: 0;
+      height: calc(100vh - 160px); // ヘッダー+フッターの概算高さを引く
+      max-height: calc(100vh - 120px);
+      overflow: hidden;
+    }
+    canvas {
+      max-height: 100%;
+      width: auto;
+    }
+  }
+  @media (max-height: 640px) {
+    #game-canvas {
+      height: calc(100vh - 180px);
+      max-height: calc(100vh - 140px);
+    }
+  }
+  @media (max-height: 560px) {
+    #game-canvas {
+      height: calc(100vh - 200px);
+      max-height: calc(100vh - 160px);
+    }
+  }
+  @media (max-height: 480px) {
+    #game-canvas {
+      height: calc(100vh - 220px);
+      max-height: calc(100vh - 180px);
+    }
+  }
+
   // 下部コントローラーエリア
   .footer {
+    /* footer 全体を縦方向に並べ、画面幅に対して中央寄せ */
     display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+
+    // 上部: 魔法入力欄 + 3ボタン
+    .top-controls {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+    }
+
+    // 下部: 左右に分割して d-pad と A ボタンを配置
+    .bottom-controls {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 12px;
+      box-sizing: border-box;
+    }
 
     .left-controls {
+      display: flex;
+      flex-direction: column;
+      align-items: center; // 中央寄せ
+
       .action-buttons {
         display: flex;
         gap: 5px;
-        margin-bottom: 10px;
+        margin-bottom: 0;
+        justify-content: center; // ボタン群を中央寄せ
       }
 
       .d-pad {
@@ -524,5 +586,29 @@ button {
 
 /* フォーム内の送信ボタン幅調整 */
 .puzzle-popup-form .puzzle-submit-btn {
+  flex: 0 0 auto;
+}
+
+#magic-input-wrap {
+  width: 100%;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center; // 横方向中央寄せ
+  margin-bottom: 8px;
+  box-sizing: border-box;
+  padding: 0 8px;
+}
+
+#magic-input-text {
+  flex: 1 1 auto;
+  min-width: 140px;
+  max-width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+}
+
+#magic-input-submit {
   flex: 0 0 auto;
 }
