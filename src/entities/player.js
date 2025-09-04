@@ -1,9 +1,15 @@
 import GameObject from "./gameObject.js";
-import { START_POS_X, START_POS_Y, TILE } from "../core/constants.js";
+import {
+  START_POS_X,
+  START_POS_Y,
+  START_FLOOR,
+  TILE,
+} from "../core/constants.js";
 import { showCustomAlert } from "../ui/modals.js";
+import { emit } from "../core/eventBus.js";
 
 export default class Player extends GameObject {
-  constructor(x, y, texturePath, mapService) {
+  constructor(x, y, texturePath, mapService, floor = START_FLOOR) {
     super(x, y, texturePath);
     this.direction = "down";
     this.animationFrame = 0;
@@ -11,11 +17,28 @@ export default class Player extends GameObject {
     this.mapService = mapService;
     this.textures = this.prepareTextures(texturePath);
     this.sprite.texture = this.textures[this.direction][0];
+    this.floor = floor;
+    // ensure mapService knows current floor
+    try {
+      this.mapService.setFloor(this.floor);
+    } catch (e) {}
+    // notify UI to update map image
+    try {
+      emit("floorChanged", this.floor);
+    } catch (e) {}
   }
 
-  teleport(x, y) {
+  teleport(x, y, floor = this.floor) {
     this.gridX = x;
     this.gridY = y;
+    this.floor = floor;
+    try {
+      this.mapService.setFloor(this.floor);
+    } catch (e) {}
+    // notify UI about floor change so background map can update
+    try {
+      emit("floorChanged", this.floor);
+    } catch (e) {}
     this.updatePixelPosition();
     this.direction = "down";
     this.animationFrame = 0;
@@ -72,7 +95,7 @@ export default class Player extends GameObject {
       return;
     }
 
-    const targetTile = this.mapService.getTile(newX, newY);
+    const targetTile = this.mapService.getTile(newX, newY, this.floor);
 
     switch (targetTile) {
       case TILE.WALL:
@@ -103,7 +126,7 @@ export default class Player extends GameObject {
                   try {
                     this.mapService.onFall();
                   } catch (e) {}
-                  this.teleport(START_POS_X, START_POS_Y);
+                  this.teleport(START_POS_X, START_POS_Y, START_FLOOR);
                 },
               });
             } catch (e) {
@@ -114,7 +137,7 @@ export default class Player extends GameObject {
               try {
                 this.mapService.onFall();
               } catch (e3) {}
-              this.teleport(START_POS_X, START_POS_Y);
+              this.teleport(START_POS_X, START_POS_Y, START_FLOOR);
             }
           });
         } catch (e) {
@@ -126,7 +149,7 @@ export default class Player extends GameObject {
                 try {
                   this.mapService.onFall();
                 } catch (e) {}
-                this.teleport(START_POS_X, START_POS_Y);
+                this.teleport(START_POS_X, START_POS_Y, START_FLOOR);
               },
             });
           } catch (e) {
@@ -136,7 +159,7 @@ export default class Player extends GameObject {
             try {
               this.mapService.onFall();
             } catch (e3) {}
-            this.teleport(START_POS_X, START_POS_Y);
+            this.teleport(START_POS_X, START_POS_Y, START_FLOOR);
           }
         }
         return;

@@ -13,32 +13,58 @@ import {
   openPuzzleModal,
   closePuzzleModal,
 } from "./modals.js";
-import { TILE, allInfo } from "../core/constants.js";
+import { TILE, allInfo, START_FLOOR } from "../core/constants.js";
 // import { startTimer as startTimerCore } from "./timer.js";
 import Player from "../entities/player.js";
 import { initEngine, getApp } from "../core/engine.js";
 import { loadAssets } from "../core/assets.js";
 import { START_POS_X, START_POS_Y } from "../core/constants.js";
 import * as mapService from "../managers/mapService.js";
+import { on } from "../core/eventBus.js";
 
 export async function setupUI() {
   const app = initEngine();
-  await loadAssets(["img/map/map_1f.jpg", "img/character.png"]);
-  const mapSprite = PIXI.Sprite.from("img/map/map_1f.jpg");
+  // ensure mapService is set to the desired start floor before loading the map image
+  try {
+    mapService.setFloor(START_FLOOR);
+  } catch (e) {}
+  await loadAssets([mapService.getMapImage(), "img/character.png"]);
+  // create map sprite from explicit start floor image to avoid race with later events
+  const mapSprite = PIXI.Sprite.from(mapService.getMapImage(START_FLOOR));
   mapSprite.width = app.screen.width;
   mapSprite.height = app.screen.height;
   app._layers.mapLayer.addChild(mapSprite);
+
+  // listen for floor change events to update background image
+  on("floorChanged", (floor) => {
+    try {
+      const img = mapService.getMapImage(floor);
+      mapSprite.texture = PIXI.Texture.from(img);
+      mapSprite.width = app.screen.width;
+      mapSprite.height = app.screen.height;
+    } catch (e) {}
+  });
 
   const player = new Player(
     START_POS_X,
     START_POS_Y,
     "img/character.png",
-    mapService
+    mapService,
+    START_FLOOR
   );
   app._layers.entityLayer.addChild(player.sprite);
   // wire player texture direction updates: keep reference on window for debug access
   // player.prepareTextures and sprite updated in Player.move/teleport already
   window.__playerInstance = player;
+
+  // expose helper for testing teleports across floors
+  window.teleportPlayer = (x, y, floor) => {
+    try {
+      player.teleport(x, y, floor);
+    } catch (e) {
+      console.log("teleportPlayer failed", e);
+    }
+  };
 
   // setup DOM hooks
   const moveButtons = [

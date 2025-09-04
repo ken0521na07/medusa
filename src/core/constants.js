@@ -1,4 +1,3 @@
-// ...existing code...
 export const TILE_SIZE = 40;
 export const MAP_WIDTH = 11;
 export const MAP_HEIGHT = 11;
@@ -16,7 +15,9 @@ export const TILE = {
   PUZZLE_1D: "puzzle_1d",
 };
 
-export const mapData = [
+// --- フロア別マップ定義 ---
+// 1F のマップ（既存）
+const MAP_1F = [
   /*y=0*/ [0, "hole", 0, 0, 0, "box_1f", 0, 0, 0, 0, 0],
   /*y=1*/ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   /*y=2*/ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -30,7 +31,26 @@ export const mapData = [
   /*y=10*/ ["puzzle_1h", 0, "puzzle_1s", 1, 0, 0, 0, 0, 0, 0, 0],
 ];
 
-export const ORIGINAL_MAP = mapData.map((row) => row.slice());
+// 2F の仮マップ（現時点では全て床にする）
+const MAP_2F = Array.from({ length: MAP_HEIGHT }, () =>
+  Array.from({ length: MAP_WIDTH }, () => 0)
+);
+
+export const MAPS = {
+  1: MAP_1F,
+  2: MAP_2F,
+};
+
+// 元の状態を保持するコピー（フロア毎）
+export const ORIGINAL_MAPS = Object.fromEntries(
+  Object.entries(MAPS).map(([k, v]) => [k, v.map((r) => r.slice())])
+);
+
+// マップ画像パス（フロア毎）
+export const MAP_IMAGES = {
+  1: "img/map/map_1f.jpg",
+  2: "img/map/map_2f.jpg",
+};
 
 export const allInfo = {
   about_hole: {
@@ -76,4 +96,5 @@ export const allPuzzles = {
 };
 
 export const START_POS_X = 5;
-export const START_POS_Y = 10;
+export const START_POS_Y = 10; // changed from 10 to 5 to start at y=5
+export const START_FLOOR = 1; // start on 1F by default
