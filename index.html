@@ -126,6 +126,21 @@
       </div>
     </div>
 
-    <script src="game.js"></script>
+    <!-- custom alert (灰色オーバーレイ + 白いボックス) -->
+    <div
+      id="custom-alert-overlay"
+      class="custom-alert-overlay"
+      style="display: none"
+    >
+      <div class="custom-alert-box">
+        <div id="custom-alert-text" class="custom-alert-text"></div>
+        <button id="custom-alert-close" class="puzzle-popup-close">
+          閉じる
+        </button>
+      </div>
+    </div>
+
+    <!-- replaced to use ES module entry -->
+    <script type="module" src="src/main.js"></script>
   </body>
 </html>

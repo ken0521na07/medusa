@@ -9,6 +9,7 @@ const TILE = {
   INFO_MSG: 2,
   INFO_HOLE: "info_hole", // 文字列として定義
   HOLE: "hole", // ▼▼▼ 追加 ▼▼▼
+  BOX_1F: "box_1f", // 追加: 箱 (1F)
   PUZZLE_1H: "puzzle_1h",
   PUZZLE_1S: "puzzle_1s",
   PUZZLE_1C: "puzzle_1c",
@@ -16,7 +17,7 @@ const TILE = {
 };
 const mapData = [
   // x: 0  1  2  3  4  5  6  7  8  9  10
-  /*y=0*/ [0, "hole", 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /*y=0*/ [0, "hole", 0, 0, 0, "box_1f", 0, 0, 0, 0, 0], // (5,0) に box_1f を配置
   /*y=1*/ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   /*y=2*/ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   /*y=3*/ [0, 0, 0, 0, 0, 0, 0, 0, "hole", 0, 0],
@@ -28,6 +29,9 @@ const mapData = [
   /*y=9*/ [0, 0, 0, 1, 0, 0, 0, 0, 0, "info_hole", 0],
   /*y=10*/ ["puzzle_1h", 0, "puzzle_1s", 1, 0, 0, 0, 0, 0, 0, 0],
 ];
+
+// --- 追加: 元のマップ配置を保持しておく ---
+const ORIGINAL_MAP = mapData.map((row) => row.slice());
 
 const allInfo = {
   about_hole: {
@@ -188,7 +192,7 @@ class Player extends GameObject {
     switch (targetTile) {
       case TILE.HOLE:
         // 穴に落ちた場合
-        alert("うわー！穴に落ちてしまった！");
+        showCustomAlert("うわー！穴に落ちてしまった！");
         this.teleport(START_POS_X, START_POS_Y); // スタート地点に戻る
         break;
 
@@ -227,7 +231,44 @@ document.getElementById("game-canvas").appendChild(app.view);
 
 let player;
 
+// 追加: pointerup / click の二重発火を抑止しつつ連続タップを許容するための制御
+let lastMoveTime = 0;
+let suppressClickUntil = 0;
+const POINTER_DEBOUNCE_MS = 40; // pointerup の重複判定（短め）
+const CLICK_SUPPRESS_MS = 250; // pointerup 後に来る click を抑止する時間
+
+// 追加: 謎のかけらや情報の初期化処理
+function resetPuzzleAndInfo() {
+  // すべての謎のかけらをロック状態に戻す
+  for (const setId in allPuzzles) {
+    const puzzleSet = allPuzzles[setId];
+    puzzleSet.unlocked = false; // セット自体をロック
+    puzzleSet.pieces.forEach((piece) => {
+      piece.unlocked = false;
+      piece.solvedAnswer = ""; // 正解があればクリア
+    });
+  }
+
+  // すべての情報をロック状態に戻す
+  for (const infoKey in allInfo) {
+    const info = allInfo[infoKey];
+    info.unlocked = false;
+  }
+
+  // マップデータを元の配置に復元（壁1等を保持）
+  for (let y = 0; y < MAP_HEIGHT; y++) {
+    for (let x = 0; x < MAP_WIDTH; x++) {
+      // ORIGINAL_MAP に基づいて mapData を上書き（参照を同一化しないためコピー）
+      mapData[y][x] = ORIGINAL_MAP[y][x];
+    }
+  }
+}
+
+// ゲームのセットアップ
 async function setupGame() {
+  // 一旦すべての謎と情報をリセット
+  resetPuzzleAndInfo();
+
   await PIXI.Assets.load(["img/map/map_1f.jpg", "img/character.png"]);
 
   const mapSprite = PIXI.Sprite.from("img/map/map_1f.jpg");
@@ -251,40 +292,72 @@ async function setupGame() {
 }
 
 function setupUI() {
-  document
-    .getElementById("up-btn")
-    .addEventListener("click", () => player.move(0, -1));
-  document
-    .getElementById("down-btn")
-    .addEventListener("click", () => player.move(0, 1));
-  document
-    .getElementById("left-btn")
-    .addEventListener("click", () => player.move(-1, 0));
-  document
-    .getElementById("right-btn")
-    .addEventListener("click", () => player.move(1, 0));
+  // 移動ボタン: pointerup をメインにして click はフォールバック兼抑止にする
+  const moveButtons = [
+    { id: "up-btn", dx: 0, dy: -1 },
+    { id: "down-btn", dx: 0, dy: 1 },
+    { id: "left-btn", dx: -1, dy: 0 },
+    { id: "right-btn", dx: 1, dy: 0 },
+  ];
 
-  document
-    .getElementById("action-a-btn")
-    .addEventListener("click", handleActionEvent);
+  moveButtons.forEach((b) => {
+    const btn = document.getElementById(b.id);
+    if (!btn) return;
 
+    // pointerup: 押して離したときに移動（タッチ環境では期待通りの挙動）
+    const onPointerUp = (e) => {
+      if (e && typeof e.preventDefault === "function") e.preventDefault();
+      const now = performance.now ? performance.now() : Date.now();
+      // 短いデバウンス（同一操作での二重発火を防ぐ）
+      if (now - lastMoveTime < POINTER_DEBOUNCE_MS) return;
+      lastMoveTime = now;
+      // pointerup で移動したら直後の click を抑止
+      suppressClickUntil = now + CLICK_SUPPRESS_MS;
+      if (player) player.move(b.dx, b.dy);
+    };
+    btn.addEventListener("pointerup", onPointerUp, { passive: false });
+
+    // click: pointer イベントが使えない環境のフォールバック。
+    // pointerup が既に走った直後の click を抑止することで「1クリックで2回発火」を防ぐ。
+    btn.addEventListener("click", (e) => {
+      const now = performance.now ? performance.now() : Date.now();
+      if (now < suppressClickUntil) {
+        // pointerup による処理が優先されたためこの click は無視
+        if (e && typeof e.preventDefault === "function") e.preventDefault();
+        return;
+      }
+      // click 自体の重複判定（非常に短い間隔での二重発火を保護）
+      if (now - lastMoveTime < POINTER_DEBOUNCE_MS) return;
+      lastMoveTime = now;
+      if (player) player.move(b.dx, b.dy);
+    });
+  });
+
+  // Aボタンは通常の click で良い
+  const actionA = document.getElementById("action-a-btn");
+  if (actionA) actionA.addEventListener("click", handleActionEvent);
+
+  // keyword モーダルの開閉
   const keywordModal = document.getElementById("keyword-modal");
-  document.getElementById("item-btn").addEventListener("click", () => {
-    keywordModal.style.display = "flex";
-  });
-  keywordModal.querySelector(".close-btn").addEventListener("click", () => {
-    keywordModal.style.display = "none";
-  });
+  const itemBtn = document.getElementById("item-btn");
+  if (itemBtn && keywordModal) {
+    itemBtn.addEventListener("click", () => {
+      keywordModal.style.display = "flex";
+    });
+    const kbClose = keywordModal.querySelector(".close-btn");
+    if (kbClose)
+      kbClose.addEventListener("click", () => {
+        keywordModal.style.display = "none";
+      });
+  }
 
-  // ▼▼▼ 追加：謎ボタンを開くハンドラ ▼▼▼
+  // 謎ボタン
   const puzzleBtn = document.getElementById("puzzle-btn");
   if (puzzleBtn) {
     puzzleBtn.addEventListener("click", () => {
-      // openPuzzleModal は関数宣言なのでここで参照して問題ありません
       openPuzzleModal();
     });
   }
-  // ▲▲▲ 追加ここまで ▲▲▲
 }
 
 function handleActionEvent() {
@@ -300,16 +373,22 @@ function handleActionEvent() {
 
   switch (currentTileType) {
     case 2:
-      alert("壁に何か文字が刻まれている...");
+      showCustomAlert("壁に何か文字が刻まれている...");
       break;
     case TILE.INFO_HOLE:
       // 「穴について」の情報を解放する
       if (!allInfo.about_hole.unlocked) {
-        alert("「穴について」の情報を得た。");
+        showCustomAlert("「穴について」の情報を得た。");
         allInfo.about_hole.unlocked = true;
       } else {
-        alert("既に「穴について」の情報は得ている。");
+        showCustomAlert("既に「穴について」の情報は得ている。");
       }
+      break;
+    case TILE.BOX_1F:
+      // 箱を調べた時のメッセージ
+      showCustomAlert("魔法「エレベ」を入手した。冊子4ページを開こう");
+      // 取得後は箱を床に置き換えて再取得不可に
+      mapData[y][x] = TILE.FLOOR;
       break;
     case TILE.PUZZLE_1H:
     case TILE.PUZZLE_1S:
@@ -327,8 +406,7 @@ function handleGetPuzzlePiece(setId, pieceId) {
 
   if (puzzlePiece && !puzzlePiece.unlocked) {
     puzzlePiece.unlocked = true;
-    alert("謎のかけらを手に入れた！");
-
+    showCustomAlert("謎のかけらを手に入れた！");
     // このセットで初めてのかけら入手なら、セット自体を解放する
     if (!puzzleSet.unlocked) {
       puzzleSet.unlocked = true;
@@ -462,7 +540,25 @@ function closePuzzleModal() {
 function renderPuzzleSetList() {
   if (!puzzleSetList) return;
   puzzleSetList.innerHTML = "";
-  Object.keys(allPuzzles).forEach((setId) => {
+
+  // unlocked フラグが true のセットのみ表示する
+  const unlockedEntries = Object.keys(allPuzzles).filter((setId) => {
+    const set = allPuzzles[setId];
+    return !!set.unlocked;
+  });
+
+  if (unlockedEntries.length === 0) {
+    // まだ解放された謎がない場合の案内表示（クリック不可）
+    const li = document.createElement("li");
+    li.textContent =
+      "解放された謎はありません。まずはマップ上でかけらを入手してください。";
+    li.style.opacity = "0.7";
+    li.style.cursor = "default";
+    puzzleSetList.appendChild(li);
+    return;
+  }
+
+  unlockedEntries.forEach((setId) => {
     const set = allPuzzles[setId];
     const li = document.createElement("li");
     li.textContent = set.title || setId;
@@ -623,23 +719,70 @@ if (popupSubmit) {
       // UI更新：グリッド再描画してグレーアウトを反映
       renderPuzzleGrid(_currentSet);
 
-      alert("正解！ピースを確定しました。");
+      showCustomAlert("正解！ピースを確定しました。");
       closePuzzlePopup();
     } else {
-      alert("不正解です。もう一度試してください。");
+      showCustomAlert("不正解です。もう一度試してください。");
     }
   });
 }
 
-// クリックで閉じるハンドラ（閉じるボタン / オーバーレイ）
-if (popupClose) {
-  popupClose.addEventListener("click", closePuzzlePopup);
+// --- 追加: カスタムアラートの実装 ---
+// place near modal/popup code (末尾付近に追加)
+// カスタムアラート: 灰色オーバーレイ上に白いボックスで表示。テキストだけ差し替え可能。
+function showCustomAlert(
+  message,
+  { autoClose = false, timeout = 0, onClose = null } = {}
+) {
+  const overlay = document.getElementById("custom-alert-overlay");
+  const textEl = document.getElementById("custom-alert-text");
+  const closeBtn = document.getElementById("custom-alert-close");
+  if (!overlay || !textEl) {
+    // フォールバック
+    window.alert(message);
+    if (typeof onClose === "function") onClose();
+    return;
+  }
+  textEl.textContent = message + ""; // ensure string
+  overlay.style.display = "flex";
+
+  const close = () => {
+    overlay.style.display = "none";
+    if (typeof onClose === "function") onClose();
+  };
+
+  // click overlay outside box closes
+  overlay.onclick = (e) => {
+    if (e.target === overlay) close();
+  };
+  if (closeBtn) {
+    closeBtn.onclick = close;
+  }
+  if (autoClose && timeout > 0) {
+    setTimeout(close, timeout);
+  }
 }
 
-if (popupOverlay) {
-  popupOverlay.addEventListener("click", (e) => {
-    // モーダル外（オーバーレイ部分）をクリックしたときだけ閉じる
-    if (e.target === popupOverlay) closePuzzlePopup();
+function closeCustomAlert() {
+  const overlay = document.getElementById("custom-alert-overlay");
+  if (overlay) overlay.style.display = "none";
+}
+
+// 既存の popupOverlay のハンドラはそのまま残す
+// ここで各モーダルのオーバーレイクリックで閉じる処理を追加
+if (typeof keywordModal !== "undefined" && keywordModal) {
+  keywordModal.addEventListener("click", (e) => {
+    if (e.target === keywordModal) keywordModal.style.display = "none";
+  });
+}
+if (infoModal) {
+  infoModal.addEventListener("click", (e) => {
+    if (e.target === infoModal) closeInfoModal();
+  });
+}
+if (puzzleModal) {
+  puzzleModal.addEventListener("click", (e) => {
+    if (e.target === puzzleModal) closePuzzleModal();
   });
 }
 

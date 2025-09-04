@@ -361,6 +361,45 @@ html {
     width: 100%;
   }
 }
+/* カスタムアラートのスタイル: 灰色オーバーレイ + 白い中央ボックス */
+.custom-alert-overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  justify-content: center;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 10000;
+  padding: 12px;
+}
+
+.custom-alert-box {
+  background: #fff;
+  color: #333;
+  padding: 16px;
+  border-radius: 10px;
+  max-width: 420px;
+  width: 90%;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.custom-alert-text {
+  font-size: 16px;
+  line-height: 1.4;
+  word-break: break-word;
+  text-align: left;
+}
+
+/* close button は既存の .puzzle-popup-close スタイルを流用するが微調整 */
+.custom-alert-box .puzzle-popup-close {
+  align-self: flex-end;
+  padding: 6px 10px;
+}
+
 /* --- ここから下は共通スタイルやリセットなど --- */
 * {
   box-sizing: border-box;
