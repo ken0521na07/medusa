@@ -31,6 +31,38 @@ export function showInfoDetail(infoKey, titleEl, contentEl) {
   if (!info) return;
   titleEl.textContent = info.title;
   contentEl.textContent = info.content;
+  if (!contentEl) return;
+
+  // If the info content points to an image (for example info_img),
+  // render the image inside the content element. Otherwise render text.
+  const maybeImg = info.content || "";
+  if (
+    typeof maybeImg === "string" &&
+    maybeImg.match(/\.(png|jpg|jpeg|gif)$/i)
+  ) {
+    contentEl.innerHTML = "";
+    const img = document.createElement("img");
+    img.src = maybeImg;
+    img.alt = info.title || infoKey;
+    img.style.maxWidth = "100%";
+    img.style.height = "auto";
+    contentEl.appendChild(img);
+  } else {
+    contentEl.textContent = info.content || "";
+  }
+
+  // Switch modal to page 2 (detail view) if pages exist. This ensures
+  // clicking an info entry always navigates to the detail page.
+  try {
+    const page1 = document.getElementById("info-page-1");
+    const page2 = document.getElementById("info-page-2");
+    if (page1 && page2) {
+      page1.style.display = "none";
+      page2.style.display = "flex";
+    }
+  } catch (e) {
+    // ignore in non-browser environments
+  }
 }
 
 export function initInfoModalHandlers() {

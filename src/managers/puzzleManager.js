@@ -61,7 +61,7 @@ if (popupSubmit) {
       const puzzleGrid = document.getElementById("puzzle-grid");
       renderPuzzleGrid(_currentSet, puzzleGrid);
       try {
-        window.alert("正解！ピースを確定しました。");
+        window.alert("正解！");
       } catch (e) {}
       closePuzzlePopup();
     } else {
@@ -106,7 +106,7 @@ export function getPuzzleSets() {
   return allPuzzles;
 }
 
-export function handleGetPuzzlePiece(setId, pieceId, playerPos) {
+export function handleGetPuzzlePiece(setId, pieceId, playerPos, options = {}) {
   const puzzleSet = allPuzzles[setId];
   if (!puzzleSet) return;
   const puzzlePiece = puzzleSet.pieces.find((p) => p.id === pieceId);
@@ -117,10 +117,11 @@ export function handleGetPuzzlePiece(setId, pieceId, playerPos) {
     // ensure set is marked unlocked
     if (!puzzleSet.unlocked) puzzleSet.unlocked = true;
     // remove from map
-    setTile(playerPos.x, playerPos.y, 0);
-    // show native alert indicating piece obtained
+    if (playerPos && typeof playerPos.x === "number")
+      setTile(playerPos.x, playerPos.y, 0);
+    // show native alert indicating piece obtained unless suppressed
     try {
-      window.alert("謎を入手した");
+      if (!options.suppressAlert) window.alert("謎を入手した");
     } catch (e) {}
     // update UI: when opening puzzle modal, render grid will show only unlocked pieces as their images
   }

@@ -18,6 +18,10 @@ export default class Player extends GameObject {
     this.textures = this.prepareTextures(texturePath);
     this.sprite.texture = this.textures[this.direction][0];
     this.floor = floor;
+    // per-floor start positions recorded when the player teleports to a floor
+    // key -> { x, y }
+    this.startPositions = {};
+    this.startPositions[this.floor] = { x: this.gridX, y: this.gridY };
     // ensure mapService knows current floor
     try {
       this.mapService.setFloor(this.floor);
@@ -29,6 +33,7 @@ export default class Player extends GameObject {
   }
 
   teleport(x, y, floor = this.floor) {
+    const prevFloor = this.floor;
     this.gridX = x;
     this.gridY = y;
     this.floor = floor;
@@ -46,6 +51,13 @@ export default class Player extends GameObject {
     // briefly suppress further movement input right after teleport
     try {
       this._suppressUntil = Date.now() + 300;
+    } catch (e) {}
+    // If the player changed floors via teleport, record this position as
+    // the start position for the new floor. This allows returning here on death.
+    try {
+      if (prevFloor !== this.floor) {
+        this.startPositions[this.floor] = { x: this.gridX, y: this.gridY };
+      }
     } catch (e) {}
   }
 
@@ -71,14 +83,96 @@ export default class Player extends GameObject {
     return textures;
   }
 
+  // check whether a `snake` tile exists along the player's current
+  // facing direction (straight line) before being blocked by a wall.
+  isSnakeInSight() {
+    const dirMap = {
+      down: [0, 1],
+      up: [0, -1],
+      left: [-1, 0],
+      right: [1, 0],
+    };
+    const vec = dirMap[this.direction];
+    if (!vec) return false;
+    let x = this.gridX + vec[0];
+    let y = this.gridY + vec[1];
+    while (
+      x >= 0 &&
+      x < this.mapService.getWidth() &&
+      y >= 0 &&
+      y < this.mapService.getHeight()
+    ) {
+      const t = this.mapService.getTile(x, y, this.floor);
+      // stop if a wall (or numeric 1) blocks the view
+      if (t === TILE.WALL || t === 1) return false;
+      if (t === TILE.SNAKE || t === "snake") return true;
+      x += vec[0];
+      y += vec[1];
+    }
+    return false;
+  }
+
+  // unified fall handler: show alert (prefer custom) then call mapService.onFall()
+  // and teleport player back to start. Uses requestAnimationFrame when available
+  // so the renderer can show the player stepping onto the tile first.
+  triggerFall(message) {
+    const doOnClose = () => {
+      try {
+        this.mapService.onFall();
+      } catch (e) {}
+      try {
+        // teleport to recorded start position for the current floor if present
+        const floor = this.floor || START_FLOOR;
+        const start = this.startPositions && this.startPositions[floor];
+        if (
+          start &&
+          typeof start.x === "number" &&
+          typeof start.y === "number"
+        ) {
+          this.teleport(start.x, start.y, floor);
+        } else {
+          // fallback to global START_* constants
+          this.teleport(START_POS_X, START_POS_Y, START_FLOOR);
+        }
+      } catch (e) {}
+    };
+
+    const show = () => {
+      try {
+        showCustomAlert(message, {
+          allowOverlayClose: false,
+          onClose: doOnClose,
+        });
+      } catch (e) {
+        try {
+          window.alert(message);
+        } catch (e2) {}
+        doOnClose();
+      }
+    };
+
+    try {
+      if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(show);
+      } else {
+        show();
+      }
+    } catch (e) {
+      show();
+    }
+  }
+
   move(dx, dy) {
     // suppress rapid inputs after teleport/fall
     if (Date.now() < (this._suppressUntil || 0)) return;
-    // update facing direction
-    if (dy > 0) this.direction = "down";
-    else if (dy < 0) this.direction = "up";
-    else if (dx < 0) this.direction = "left";
-    else if (dx > 0) this.direction = "right";
+    // determine intended facing direction, but don't apply it yet.
+    // We'll set the sprite's direction right before finishing the move so
+    // intermediate logic (line-of-sight, collisions) isn't affected.
+    let intendedDirection = this.direction;
+    if (dy > 0) intendedDirection = "down";
+    else if (dy < 0) intendedDirection = "up";
+    else if (dx < 0) intendedDirection = "left";
+    else if (dx > 0) intendedDirection = "right";
 
     const newX = this.gridX + dx;
     const newY = this.gridY + dy;
@@ -108,6 +202,8 @@ export default class Player extends GameObject {
       case TILE.HOLE:
       case "hole":
         // 1) move into the hole visually
+        // apply intended facing now so the character turns just before the move
+        this.direction = intendedDirection;
         this.gridX = newX;
         this.gridY = newY;
         this.updatePixelPosition();
@@ -115,53 +211,26 @@ export default class Player extends GameObject {
         try {
           this._suppressUntil = Date.now() + 1000;
         } catch (e) {}
-        // 2) show custom alert (overlay). Defer alert until next frame so
-        // the renderer has a chance to draw the player at the hole position.
+        // unified fall behavior
+        this.triggerFall("穴に落ちてしまった");
+        return;
+      case TILE.SNAKE:
+      case "snake":
+        // Treat snake tiles as impassable (like a wall). If the player is
+        // adjacent and attempts to move toward the snake, turn to face it
+        // and show the same "snake seen" message without falling.
+        this.direction = intendedDirection;
+        // show standing frame in new facing
+        this.animationFrame = 0;
+        this.sprite.texture =
+          this.textures[this.direction][this.animationFrame];
         try {
-          requestAnimationFrame(() => {
-            try {
-              showCustomAlert("穴に落ちてしまった", {
-                allowOverlayClose: false,
-                onClose: () => {
-                  try {
-                    this.mapService.onFall();
-                  } catch (e) {}
-                  this.teleport(START_POS_X, START_POS_Y, START_FLOOR);
-                },
-              });
-            } catch (e) {
-              // fallback: if custom alert fails, use native alert and then teleport
-              try {
-                window.alert("穴に落ちてしまった");
-              } catch (e2) {}
-              try {
-                this.mapService.onFall();
-              } catch (e3) {}
-              this.teleport(START_POS_X, START_POS_Y, START_FLOOR);
-            }
-          });
-        } catch (e) {
-          // if requestAnimationFrame isn't available, fallback immediately
-          try {
-            showCustomAlert("穴に落ちてしまった", {
-              allowOverlayClose: false,
-              onClose: () => {
-                try {
-                  this.mapService.onFall();
-                } catch (e) {}
-                this.teleport(START_POS_X, START_POS_Y, START_FLOOR);
-              },
-            });
-          } catch (e) {
-            try {
-              window.alert("穴に落ちてしまった");
-            } catch (e2) {}
-            try {
-              this.mapService.onFall();
-            } catch (e3) {}
-            this.teleport(START_POS_X, START_POS_Y, START_FLOOR);
-          }
-        }
+          // small debounce to avoid spamming when player holds the button
+          this._suppressUntil = Date.now() + 300;
+        } catch (e) {}
+        // Immediately trigger fall behavior (modal + teleport) when the
+        // player looks toward an adjacent snake.
+        this.triggerFall("ヘビを見て石化してしまった...！");
         return;
       default:
         // normal floor or item: move and animate
@@ -169,8 +238,19 @@ export default class Player extends GameObject {
         this.gridY = newY;
         this.updatePixelPosition();
         this.animationFrame = (this.animationFrame + 1) % 4;
+        // now that movement is practically done, apply the facing and update texture
+        this.direction = intendedDirection;
         this.sprite.texture =
           this.textures[this.direction][this.animationFrame];
+        // after moving normally, check if a snake is in sight along facing direction
+        try {
+          if (this.isSnakeInSight()) {
+            try {
+              this._suppressUntil = Date.now() + 1000;
+            } catch (e) {}
+            this.triggerFall("ヘビを見て石化してしまった...！");
+          }
+        } catch (e) {}
         return;
     }
   }

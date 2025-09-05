@@ -117,6 +117,24 @@ export async function setupUI() {
           showCustomAlert("既に「穴について」の情報は得ている。");
         }
         break;
+      case TILE.INFO_SNAKE:
+        if (!allInfo.info_snake.unlocked) {
+          allInfo.info_snake.unlocked = true;
+          mapService.setTile(x, y, 0);
+          showCustomAlert(`${allInfo.info_snake.title}を入手した`);
+        } else {
+          showCustomAlert(`既に${allInfo.info_snake.title}は入手している。`);
+        }
+        break;
+      case TILE.INFO_IMG:
+        if (!allInfo.info_img.unlocked) {
+          allInfo.info_img.unlocked = true;
+          mapService.setTile(x, y, 0);
+          showCustomAlert(`${allInfo.info_img.title}を入手した`);
+        } else {
+          showCustomAlert(`既に${allInfo.info_img.title}は入手している。`);
+        }
+        break;
       case TILE.BOX_1F:
         showCustomAlert("魔法「エレベ」を入手した。冊子4ページを開こう");
         mapService.setTile(x, y, 0);
@@ -126,6 +144,46 @@ export async function setupUI() {
       case TILE.PUZZLE_1C:
       case TILE.PUZZLE_1D:
         handleGetPuzzlePiece("elevator_1f", currentTileType, { x, y });
+        break;
+      case TILE.PUZZLE_2H:
+        // ハートの謎
+        handleGetPuzzlePiece(
+          "elevator_2f",
+          currentTileType,
+          { x, y },
+          { suppressAlert: true }
+        );
+        showCustomAlert("ハートの謎を入手した。");
+        break;
+      case TILE.PUZZLE_2D:
+        // ダイヤの謎
+        handleGetPuzzlePiece(
+          "elevator_2f",
+          currentTileType,
+          { x, y },
+          { suppressAlert: true }
+        );
+        showCustomAlert("ダイヤの謎を入手した。");
+        break;
+      case TILE.PUZZLE_2S:
+        // スペードの謎
+        handleGetPuzzlePiece(
+          "elevator_2f",
+          currentTileType,
+          { x, y },
+          { suppressAlert: true }
+        );
+        showCustomAlert("スペードの謎を入手した。");
+        break;
+      case TILE.PUZZLE_2C:
+        // クローバーの謎
+        handleGetPuzzlePiece(
+          "elevator_2f",
+          currentTileType,
+          { x, y },
+          { suppressAlert: true }
+        );
+        showCustomAlert("クローバーの謎を入手した。");
         break;
       default:
         break;
@@ -226,7 +284,10 @@ export async function setupUI() {
 
       if (ok && x === 5 && y === 5) {
         try {
-          showCustomAlert("魔法が唱えられた！正解です。");
+          teleportPlayer(5, 5, 2);
+          showCustomAlert(
+            "「エレべ」を唱え、1Fから2Fに移動した。封筒Aを開こう"
+          );
         } catch (e) {
           try {
             window.alert("魔法が唱えられた！正解です。");

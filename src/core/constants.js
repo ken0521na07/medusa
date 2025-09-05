@@ -7,12 +7,19 @@ export const TILE = {
   WALL: 1,
   INFO_MSG: 2,
   INFO_HOLE: "info_hole",
+  INFO_SNAKE: "info_snake",
+  INFO_IMG: "info_img",
   HOLE: "hole",
+  SNAKE: "snake",
   BOX_1F: "box_1f",
   PUZZLE_1H: "puzzle_1h",
   PUZZLE_1S: "puzzle_1s",
   PUZZLE_1C: "puzzle_1c",
   PUZZLE_1D: "puzzle_1d",
+  PUZZLE_2H: "puzzle_2h",
+  PUZZLE_2S: "puzzle_2s",
+  PUZZLE_2C: "puzzle_2c",
+  PUZZLE_2D: "puzzle_2d",
 };
 
 // --- フロア別マップ定義 ---
@@ -32,9 +39,19 @@ const MAP_1F = [
 ];
 
 // 2F の仮マップ（現時点では全て床にする）
-const MAP_2F = Array.from({ length: MAP_HEIGHT }, () =>
-  Array.from({ length: MAP_WIDTH }, () => 0)
-);
+const MAP_2F = [
+  ["puzzle_2s", 0, 0, 0, 0, 0, 0, 0, "snake", 0, "puzzle_2d"],
+  [0, 0, 0, "snake", 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, "hole", 0, "info_snake", 0, 0, 0, "snake", 0],
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  ["snake", 0, 0, 0, 0, 0, 0, "snake", 0, 1, 0],
+  [0, 0, "hole", 0, 0, 0, "snake", 0, "snake", 0, 0],
+  [1, 0, 0, 0, 0, 0, 0, "snake", 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+  [0, 0, 0, "snake", 0, "info_img", 0, 0, 0, 0, 0],
+  [0, "snake", 0, 0, 0, 0, 0, 0, 0, 0, "snake"],
+  ["puzzle_2h", "hole", 0, 0, "snake", 1, 0, "hole", 0, 0, "puzzle_2c"],
+];
 
 export const MAPS = {
   1: MAP_1F,
@@ -57,6 +74,18 @@ export const allInfo = {
     title: "穴について",
     content:
       "穴に落ちると真下に落ちて死んでしまう。（死亡した場合、直近でそのフロアに到達した位置に戻される）落ちないように注意しよう。",
+    unlocked: false,
+  },
+  info_snake: {
+    title: "蛇の情報",
+    content:
+      "視線の直線上に蛇がいると、石化して死んでしまう。蛇を見ないように気をつけよう。",
+    unlocked: false,
+  },
+  info_img: {
+    title: "謎について",
+    // content will be handled as image reference; store image path here
+    content: "img/info_img.png",
     unlocked: false,
   },
 };
@@ -93,8 +122,39 @@ export const allPuzzles = {
       },
     ],
   },
+  elevator_2f: {
+    title: "謎|2F",
+    unlocked: false,
+    bottomImages: [],
+    pieces: [
+      {
+        id: TILE.PUZZLE_2H,
+        image: "img/nazo/2f_heart.png",
+        unlocked: false,
+        answers: ["えーる"],
+      },
+      {
+        id: TILE.PUZZLE_2S,
+        image: "img/nazo/2f_spade.png",
+        unlocked: false,
+        answers: ["ぞうに"],
+      },
+      {
+        id: TILE.PUZZLE_2C,
+        image: "img/nazo/2f_clover.png",
+        unlocked: false,
+        answers: ["うまみ"],
+      },
+      {
+        id: TILE.PUZZLE_2D,
+        image: "img/nazo/2f_diamond.png",
+        unlocked: false,
+        answers: ["いけん"],
+      },
+    ],
+  },
 };
 
 export const START_POS_X = 5;
-export const START_POS_Y = 10; // changed from 10 to 5 to start at y=5
+export const START_POS_Y = 5; // changed from 10 to 5 to start at y=5
 export const START_FLOOR = 1; // start on 1F by default
