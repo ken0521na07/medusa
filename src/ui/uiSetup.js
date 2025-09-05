@@ -363,6 +363,12 @@ export async function setupUI() {
         checkMagic();
       }
     });
+    // After clicking submit, clear the input for convenience
+    magicSubmit.addEventListener("click", () => {
+      try {
+        magicInput.value = "";
+      } catch (e) {}
+    });
   }
 
   const infoClose = document.getElementById("info-close-btn");

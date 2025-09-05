@@ -216,6 +216,18 @@ html {
   padding: 10px;
 }
 
+/* fix: always position the info-page-2 back button at top-left so
+   content (images/text) doesn't shift its position */
+#info-page-2 .modal-header {
+  position: relative;
+}
+#info-page-2 .back-btn {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  z-index: 2;
+}
+
 /* ▲▲▲ 情報モーダル用のスタイルここまで ▲▲▲ */
 /* style.scss 内の謎モーダル用スタイルを、以下の内容に丸ごと差し替えてください */
 /* ▼▼▼ 謎モーダル用のスタイル (修正版) ▼▼▼ */
@@ -356,7 +368,7 @@ html {
   width: auto;
   height: auto;
   -o-object-fit: contain;
-     object-fit: contain;
+  object-fit: contain;
 }
 
 /* 小さい画面向け微調整 */
@@ -567,4 +579,4 @@ button {
 
 #magic-input-submit {
   flex: 0 0 auto;
-}/*# sourceMappingURL=style.css.map */
+} /*# sourceMappingURL=style.css.map */
