@@ -68,6 +68,7 @@ export async function initSnakes(appLayers, { autoFromMap = true } = {}) {
     const floors = Object.keys(MAPS).map((k) => parseInt(k, 10));
     for (const f of floors) {
       const points = new Set();
+      const starts = new Set();
       const w = mapService.getWidth();
       const h = mapService.getHeight();
       for (let y = 0; y < h; y++) {
@@ -75,6 +76,11 @@ export async function initSnakes(appLayers, { autoFromMap = true } = {}) {
           const t = mapService.getTile(x, y, f);
           if (t === TILE.SNAKE_BOUNCE || t === "snake_bounce") {
             points.add(x + "," + y);
+          }
+          if (t === TILE.SNAKE_BOUNCE_START || t === "snake_bounce_start") {
+            // treat start marker also as part of the path
+            points.add(x + "," + y);
+            starts.add(x + "," + y);
           }
         }
       }
@@ -84,7 +90,16 @@ export async function initSnakes(appLayers, { autoFromMap = true } = {}) {
       for (const comp of comps) {
         // sort comp for a predictable path order: prefer top-to-bottom then left-to-right
         comp.sort((a, b) => a.y - b.y || a.x - b.x);
-        addSnake({ floor: f, path: comp, mode: "bounce" });
+        // choose starting index if any point in this comp was marked as start
+        let startIndex = 0;
+        for (let i = 0; i < comp.length; i++) {
+          const key = comp[i].x + "," + comp[i].y;
+          if (starts.has(key)) {
+            startIndex = i;
+            break;
+          }
+        }
+        addSnake({ floor: f, path: comp, mode: "bounce", startIndex });
       }
     }
   }
@@ -128,11 +143,27 @@ export function addSnake({ floor = 3, path = [], mode = "bounce" } = {}) {
     floor,
     path: path.map((p) => ({ x: p.x, y: p.y })),
     index: 0,
+    // initialIndex records the spawn/starting index so resets return here
+    initialIndex: 0,
     dir: 1, // for bounce: 1 down the array, -1 up; for loop: 1 moves forward
     mode, // 'bounce' or 'loop' (future extension)
     sprite: null,
     addedToLayer: false,
   };
+  // apply provided startIndex if present
+  try {
+    if (
+      typeof arguments[0].startIndex === "number" &&
+      arguments[0].startIndex >= 0 &&
+      arguments[0].startIndex < snakeDef.path.length
+    ) {
+      snakeDef.index = arguments[0].startIndex;
+    }
+  } catch (e) {}
+  // record as initialIndex for future resets
+  try {
+    snakeDef.initialIndex = snakeDef.index || 0;
+  } catch (e) {}
   // create GameObject for this snake
   try {
     snakeDef.sprite = makeGameObjectForSnake(snakeDef);
@@ -250,9 +281,9 @@ export function resetPositions() {
   try {
     for (const s of snakes) {
       if (!s.path || s.path.length === 0) continue;
-      s.index = 0;
+      s.index = typeof s.initialIndex === "number" ? s.initialIndex : 0;
       s.dir = 1;
-      const pos = s.path[0];
+      const pos = s.path[s.index];
       try {
         if (s.sprite) {
           s.sprite.gridX = pos.x;

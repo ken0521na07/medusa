@@ -14,6 +14,7 @@ export const TILE = {
   HOLE: "hole",
   SNAKE: "snake",
   SNAKE_BOUNCE: "snake_bounce",
+  SNAKE_BOUNCE_START: "snake_bounce_start",
   BOX_1F: "box_1f",
   BOX_3F: "box_3f",
   PUZZLE_1H: "puzzle_1h",
@@ -70,9 +71,9 @@ const MAP_3F = [
   ["snake", 0, 0, 0, 1, 0, 0, "snake_bounce", 1, 0, 0],
   [0, "statue_j", 0, "puzzle_3", 1, 0, 0, "snake_bounce", 1, "move", 0],
   ["snake", 0, 0, 0, 1, 0, 0, "snake_bounce", 1, 0, 0],
-  ["snake", 0, 0, 0, 1, "info_statue", 0, "snake_bounce", 1, 0, 0],
+  ["snake", 0, 0, 0, 1, "info_statue", 0, "snake_bounce_start", 1, 0, 0],
   ["snake", 0, 0, 1, 0, 0, 0, "snake_bounce", 1, 0, "snake_bounce"],
-  ["snake", 0, 1, 0, 0, 0, 0, 0, 0, 0, "snake_bounce"],
+  ["snake", 0, 1, 0, 0, 0, 0, 0, 0, 0, "snake_bounce_start"],
   ["snake", 0, 0, 0, 0, "change", 0, 1, 0, 0, "snake_bounce"],
 ];
 
@@ -113,6 +114,24 @@ export const allInfo = {
     content: "img/info_img.png",
     unlocked: false,
   },
+  info_snake_g: {
+    title: "緑の（動く）蛇の情報",
+    content:
+      "蛇の中にはあなたの動きに合わせて移動するものが存在する。石化の判定はあなたと蛇両方が動いた後に行われる。",
+    unlocked: false,
+  },
+  info_statue: {
+    title: "像の情報",
+    content:
+      "石像には名前がついている。人の力では動かすことができない。石像が移動する際、経路に蛇が居ると轢き殺す。また、石像越しで蛇を見ても石化は起こらない。",
+    unlocked: false,
+  },
+};
+
+// simple runtime state that other UI code can update/query (e.g. whether
+// the player obtained the MOVE magic from BOX_3F)
+export const playerState = {
+  gotMoveMagic: false,
 };
 
 export const allPuzzles = {
@@ -182,4 +201,4 @@ export const allPuzzles = {
 
 export const START_POS_X = 5;
 export const START_POS_Y = 5; // changed from 10 to 5 to start at y=5
-export const START_FLOOR = 1; // start on 1F by default
+export const START_FLOOR = 3; // start on 1F by default

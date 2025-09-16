@@ -13,15 +13,17 @@ import {
   openPuzzleModal,
   closePuzzleModal,
 } from "./modals.js";
-import { TILE, allInfo, START_FLOOR } from "../core/constants.js";
+import { TILE, allInfo, START_FLOOR, playerState } from "../core/constants.js";
 // import { startTimer as startTimerCore } from "./timer.js";
 import Player from "../entities/player.js";
 import { initEngine, getApp } from "../core/engine.js";
 import { loadAssets } from "../core/assets.js";
 import { START_POS_X, START_POS_Y } from "../core/constants.js";
 import * as mapService from "../managers/mapService.js";
-import { on } from "../core/eventBus.js";
+import { on, emit } from "../core/eventBus.js";
 import * as snakeManager from "../managers/snakeManager.js";
+import GameObject from "../entities/gameObject.js";
+import { MAPS } from "../core/constants.js";
 
 export async function setupUI() {
   const app = initEngine();
@@ -29,7 +31,12 @@ export async function setupUI() {
   try {
     mapService.setFloor(START_FLOOR);
   } catch (e) {}
-  await loadAssets([mapService.getMapImage(), "img/character.png"]);
+  // preload map, character, and statue images so sprites render immediately
+  await loadAssets([
+    mapService.getMapImage(),
+    "img/character.png",
+    "img/statue.png",
+  ]);
   // create map sprite from explicit start floor image to avoid race with later events
   const mapSprite = PIXI.Sprite.from(mapService.getMapImage(START_FLOOR));
   mapSprite.width = app.screen.width;
@@ -48,6 +55,14 @@ export async function setupUI() {
       mapSprite.texture = PIXI.Texture.from(img);
       mapSprite.width = app.screen.width;
       mapSprite.height = app.screen.height;
+      // toggle statue visibility based on floor
+      try {
+        for (const s of statues) {
+          if (s && s.obj && typeof s.floor !== "undefined") {
+            s.obj.sprite.visible = s.floor === floor;
+          }
+        }
+      } catch (e) {}
     } catch (e) {}
   });
 
@@ -62,6 +77,43 @@ export async function setupUI() {
   // wire player texture direction updates: keep reference on window for debug access
   // player.prepareTextures and sprite updated in Player.move/teleport already
   window.__playerInstance = player;
+
+  // initialize statue sprites from MAPS (statue_* tiles)
+  const statues = [];
+  function initStatues() {
+    try {
+      for (const [floorKey, map] of Object.entries(MAPS)) {
+        const floor = parseInt(floorKey, 10);
+        for (let y = 0; y < map.length; y++) {
+          const row = map[y] || [];
+          for (let x = 0; x < row.length; x++) {
+            const t = row[x];
+            if (typeof t === "string" && t.startsWith("statue_")) {
+              const nameKey = t; // e.g. 'statue_j'
+              // create a simple GameObject sprite for the statue
+              try {
+                const g = new GameObject(x, y, "img/statue.png");
+                g.sprite.visible = floor === mapService.getFloor();
+                app._layers.entityLayer.addChild(g.sprite);
+                statues.push({ x, y, floor, nameKey, obj: g });
+              } catch (e) {
+                console.error("initStatues: failed to create statue sprite", e);
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {}
+  }
+  initStatues();
+  // expose statues globally so external helpers/modals can access them
+  try {
+    window.__statues = statues;
+  } catch (e) {}
+  // ensure visibility sync runs now that statues exist
+  try {
+    emit("floorChanged", mapService.getFloor());
+  } catch (e) {}
 
   // listen for player moves to step the snake and then evaluate sight
   on("playerMoved", (payload) => {
@@ -139,6 +191,22 @@ export async function setupUI() {
 
   function handleActionEvent() {
     if (!player) return;
+    // check tile in front of player first for statues
+    const dirMap = { down: [0, 1], up: [0, -1], left: [-1, 0], right: [1, 0] };
+    const vec = dirMap[player.direction] || [0, 0];
+    const fx = player.gridX + vec[0];
+    const fy = player.gridY + vec[1];
+    const frontTile = mapService.getTile(fx, fy, player.floor);
+
+    if (typeof frontTile === "string" && frontTile.startsWith("statue_")) {
+      // reveal statue name; for statue_j show ジェシー
+      let msg = "この像の名前は不明だ。";
+      if (frontTile === TILE.STATUE_J || frontTile === "statue_j")
+        msg = "この像の名前はジェシーです。";
+      showCustomAlert(msg);
+      return;
+    }
+
     const x = player.gridX;
     const y = player.gridY;
     const currentTileType = mapService.getTile(x, y);
@@ -146,6 +214,24 @@ export async function setupUI() {
     switch (currentTileType) {
       case 2:
         showCustomAlert("壁に何か文字が刻まれている...");
+        break;
+      case TILE.INFO_SNAKE_G:
+        if (!allInfo.info_snake_g.unlocked) {
+          allInfo.info_snake_g.unlocked = true;
+          mapService.setTile(x, y, 0);
+          showCustomAlert(`${allInfo.info_snake_g.title}を入手した`);
+        } else {
+          showCustomAlert(`既に${allInfo.info_snake_g.title}は入手している。`);
+        }
+        break;
+      case TILE.INFO_STATUE:
+        if (!allInfo.info_statue.unlocked) {
+          allInfo.info_statue.unlocked = true;
+          mapService.setTile(x, y, 0);
+          showCustomAlert(`${allInfo.info_statue.title}を入手した`);
+        } else {
+          showCustomAlert(`既に${allInfo.info_statue.title}は入手している。`);
+        }
         break;
       case TILE.INFO_HOLE:
         if (!allInfo.about_hole.unlocked) {
@@ -176,6 +262,15 @@ export async function setupUI() {
       case TILE.BOX_1F:
         showCustomAlert("魔法「エレベ」を入手した。冊子4ページを開こう");
         mapService.setTile(x, y, 0);
+        break;
+      case TILE.BOX_3F:
+        if (!playerState.gotMoveMagic) {
+          playerState.gotMoveMagic = true;
+          mapService.setTile(x, y, 0);
+          showCustomAlert("魔法「ムーブ」を入手した。冊子６ページを開こう。");
+        } else {
+          showCustomAlert("既に魔法「ムーブ」は入手している。");
+        }
         break;
       case TILE.PUZZLE_1H:
       case TILE.PUZZLE_1S:
@@ -323,6 +418,31 @@ export async function setupUI() {
       const showAccepted = ["えいぞう", "映像", "エイゾウ"];
       const normalizedShow = showAccepted.map((s) => normalize(s));
       const isShowSpell = normalizedShow.includes(raw);
+
+      // MOVE spell handling
+      const moveAccepted = ["fox", "フォックス", "FOX"];
+      const normalizedMoveAccepted = moveAccepted.map((s) =>
+        normalize(s).toLowerCase()
+      );
+      const isMoveSpell = normalizedMoveAccepted.includes(
+        (raw || "").toLowerCase()
+      );
+      if (isMoveSpell) {
+        if (!playerState.gotMoveMagic) {
+          const msg = "正しい魔法陣の上で唱えよう";
+          try {
+            showCustomAlert(msg);
+          } catch (e) {
+            try {
+              window.alert(msg);
+            } catch (e2) {}
+          }
+          return;
+        }
+        // open modal to get statue name and direction
+        openMoveModal();
+        return;
+      }
 
       if (isShowSpell) {
         if (floor === 2 && x === 5 && y === 5) {
@@ -495,6 +615,187 @@ export function startTimer() {
       .toString()
       .padStart(2, "0");
     const sec = (seconds % 60).toString().padStart(2, "0");
-    if (timerElement) timerElement.textContent = `TIME ${min}:${sec}`;
+    try {
+      if (timerElement) timerElement.textContent = `TIME ${min}:${sec}`;
+    } catch (e) {}
   }, 1000);
+}
+
+// Create move modal UI on demand
+function openMoveModal() {
+  const statues =
+    typeof window !== "undefined" && window.__statues ? window.__statues : [];
+  let modal = document.getElementById("move-modal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "move-modal";
+    modal.className = "modal-wrapper";
+    modal.style.display = "flex";
+    modal.style.position = "fixed";
+    modal.style.left = "0";
+    modal.style.top = "0";
+    modal.style.width = "100%";
+    modal.style.height = "100%";
+    modal.style.alignItems = "center";
+    modal.style.justifyContent = "center";
+    modal.style.zIndex = 25000;
+
+    const box = document.createElement("div");
+    box.className = "modal-content";
+    box.style.padding = "12px";
+    box.style.background = "#fff";
+    box.style.borderRadius = "6px";
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "8px";
+    box.style.minWidth = "240px";
+
+    const p1 = document.createElement("div");
+    p1.textContent = "ムーブを使用する像の名前を入力してください";
+    box.appendChild(p1);
+
+    const nameInput = document.createElement("input");
+    nameInput.placeholder = "像の名前";
+    nameInput.id = "move-name-input";
+    box.appendChild(nameInput);
+
+    const p2 = document.createElement("div");
+    p2.textContent = "像を動かす方向を入力してください";
+    box.appendChild(p2);
+
+    const select = document.createElement("select");
+    select.id = "move-direction-select";
+    ["東", "西", "南", "北"].forEach((d) => {
+      const opt = document.createElement("option");
+      opt.value = d;
+      opt.textContent = d;
+      select.appendChild(opt);
+    });
+    box.appendChild(select);
+
+    const submit = document.createElement("button");
+    submit.textContent = "送信";
+    box.appendChild(submit);
+
+    const close = document.createElement("button");
+    close.textContent = "閉じる";
+    box.appendChild(close);
+
+    modal.appendChild(box);
+    document.body.appendChild(modal);
+
+    // handlers
+    close.addEventListener("click", () => {
+      modal.style.display = "none";
+    });
+    submit.addEventListener("click", () => {
+      const name = (nameInput.value || "").trim();
+      const dir = select.value;
+      // Validate: must be "ジェシー" and direction "北"
+      if (name !== "ジェシー") {
+        showCustomAlert("入力が正しくないようだ");
+        return;
+      }
+      // find statue_j in statues list
+      const s = statues.find((st) => st.nameKey === "statue_j");
+      if (!s) {
+        showCustomAlert("その像は見つからないようだ");
+        return;
+      }
+      // direction vector
+      const dirMap = { 東: [1, 0], 西: [-1, 0], 南: [0, 1], 北: [0, -1] };
+      const vec = dirMap[dir];
+      if (!vec) {
+        showCustomAlert("入力が正しくないようだ");
+        return;
+      }
+      const oldX = s.x;
+      const oldY = s.y;
+      const floor = s.floor;
+
+      // validate path up to 5 tiles: no wall or out-of-bounds allowed
+      const w = mapService.getWidth();
+      const h = mapService.getHeight();
+      let blocked = false;
+      let fell = false;
+      let targetX = oldX;
+      let targetY = oldY;
+      for (let step = 1; step <= 5; step++) {
+        const nx = oldX + vec[0] * step;
+        const ny = oldY + vec[1] * step;
+        // out of bounds -> blocked
+        if (nx < 0 || nx >= w || ny < 0 || ny >= h) {
+          blocked = true;
+          break;
+        }
+        const t = mapService.getTile(nx, ny, floor);
+        // wall blocks
+        if (t === TILE.WALL || t === 1) {
+          blocked = true;
+          break;
+        }
+        // hole: statue falls to floor-1 at this x,y
+        if (t === TILE.HOLE || t === "hole") {
+          targetX = nx;
+          targetY = ny;
+          fell = true;
+          break;
+        }
+        // otherwise, continue; if reached final step without obstacle, that's target
+        if (step === 5) {
+          targetX = nx;
+          targetY = ny;
+        }
+      }
+
+      if (blocked) {
+        showCustomAlert("入力が正しくないようだ");
+        return;
+      }
+
+      if (fell) {
+        // statue falls to lower floor
+        const newFloor = Math.max(1, floor - 1);
+        // update map: clear old pos on current floor
+        try {
+          mapService.setTile(oldX, oldY, 0, floor);
+        } catch (e) {}
+        // place statue on lower floor at same x,y
+        try {
+          mapService.setTile(targetX, targetY, TILE.STATUE_J, newFloor);
+        } catch (e) {}
+        // update statue record
+        s.x = targetX;
+        s.y = targetY;
+        s.floor = newFloor;
+        try {
+          s.obj.gridX = targetX;
+          s.obj.gridY = targetY;
+          // sprite visibility may need toggling depending on current viewed floor
+          s.obj.sprite.visible = s.floor === mapService.getFloor();
+          s.obj.updatePixelPosition();
+        } catch (e) {}
+        showCustomAlert("像が穴に落ちて下の階に落下した。");
+        modal.style.display = "none";
+        return;
+      }
+
+      // normal move to targetX,targetY on same floor
+      try {
+        mapService.setTile(oldX, oldY, 0, floor);
+        mapService.setTile(targetX, targetY, TILE.STATUE_J, floor);
+      } catch (e) {}
+      s.x = targetX;
+      s.y = targetY;
+      try {
+        s.obj.gridX = targetX;
+        s.obj.gridY = targetY;
+        s.obj.updatePixelPosition();
+      } catch (e) {}
+      showCustomAlert("「ムーブ」を唱え、像を移動した。");
+      modal.style.display = "none";
+    });
+  } else {
+    modal.style.display = "flex";
+  }
 }

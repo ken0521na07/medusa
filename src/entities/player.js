@@ -219,6 +219,18 @@ export default class Player extends GameObject {
 
     const targetTile = this.mapService.getTile(newX, newY, this.floor);
 
+    // treat statue_* tiles as walls (impassable) unless moved by magic
+    if (typeof targetTile === "string" && targetTile.startsWith("statue_")) {
+      // face the statue but do not move into it
+      this.direction = intendedDirection;
+      this.animationFrame = 0;
+      this.sprite.texture = this.textures[this.direction][this.animationFrame];
+      try {
+        this._suppressUntil = Date.now() + 300;
+      } catch (e) {}
+      return;
+    }
+
     switch (targetTile) {
       case TILE.WALL:
       case 1:
