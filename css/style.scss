@@ -612,3 +612,37 @@ button {
 #magic-input-submit {
   flex: 0 0 auto;
 }
+
+/* --- Info modal page 2: header (button + title) and detail stacked vertically --- */
+#info-page-2 {
+  display: flex;
+  flex-direction: column; /* header on top, detail below */
+  width: 100%;
+}
+
+#info-page-2 .modal-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start; /* keep back button and title together on the left */
+  gap: 8px;
+  margin-bottom: 12px; /* spacing before the detail */
+}
+
+/* Title in header should take remaining space if needed */
+#info-page-2 .modal-header h3,
+#info-page-2 .modal-header #info-detail-title {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.2;
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+/* Ensure detail area occupies full width under the header */
+#info-page-2 #info-detail {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  box-sizing: border-box;
+}

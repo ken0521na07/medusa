@@ -157,4 +157,4 @@ export const allPuzzles = {
 
 export const START_POS_X = 5;
 export const START_POS_Y = 5; // changed from 10 to 5 to start at y=5
-export const START_FLOOR = 1; // start on 1F by default
+export const START_FLOOR = 2; // start on 1F by default
