@@ -21,6 +21,7 @@ import { loadAssets } from "../core/assets.js";
 import { START_POS_X, START_POS_Y } from "../core/constants.js";
 import * as mapService from "../managers/mapService.js";
 import { on } from "../core/eventBus.js";
+import * as snakeManager from "../managers/snakeManager.js";
 
 export async function setupUI() {
   const app = initEngine();
@@ -34,6 +35,11 @@ export async function setupUI() {
   mapSprite.width = app.screen.width;
   mapSprite.height = app.screen.height;
   app._layers.mapLayer.addChild(mapSprite);
+
+  // initialize snakes after map and layers are ready so visibility sync works
+  try {
+    await snakeManager.initSnakes(app._layers);
+  } catch (e) {}
 
   // listen for floor change events to update background image
   on("floorChanged", (floor) => {
@@ -56,6 +62,25 @@ export async function setupUI() {
   // wire player texture direction updates: keep reference on window for debug access
   // player.prepareTextures and sprite updated in Player.move/teleport already
   window.__playerInstance = player;
+
+  // listen for player moves to step the snake and then evaluate sight
+  on("playerMoved", (payload) => {
+    try {
+      // step snakes (only visible ones by default)
+      const moved = snakeManager.stepSnakes({ onlyVisible: true });
+      // moved is an array of {id,x,y,floor}
+      // you can use it for debug if needed
+      // console.log('snakes moved', moved);
+
+      // after both have moved (player and snake), evaluate line-of-sight
+      try {
+        if (player.isSnakeInSight()) {
+          // if snake now visible, trigger fall
+          player.triggerFall("ヘビを見て石化してしまった...！");
+        }
+      } catch (e) {}
+    } catch (e) {}
+  });
 
   // expose helper for testing teleports across floors
   window.teleportPlayer = (x, y, floor) => {
@@ -82,15 +107,28 @@ export async function setupUI() {
   moveButtons.forEach((b) => {
     const btn = document.getElementById(b.id);
     if (!btn) return;
+    // per-button flag to avoid handling both pointerup and click
+    let _lastPointerHandledAt = 0;
+
     const onPointerUp = (e) => {
       const now = Date.now();
       if (now - lastMoveTime < POINTER_DEBOUNCE_MS) return;
       lastMoveTime = now;
       suppressClickUntil = now + CLICK_SUPPRESS_MS;
+      _lastPointerHandledAt = now;
       player.move(b.dx, b.dy);
     };
     btn.addEventListener("pointerup", onPointerUp, { passive: false });
+
+    // Keep click handler for keyboard/legacy activation, but ignore click if
+    // pointerup just handled the action (prevents double-move).
     btn.addEventListener("click", (e) => {
+      const now = Date.now();
+      // if pointerup handled this button recently, ignore the click
+      if (now - _lastPointerHandledAt < 500) {
+        e.preventDefault();
+        return;
+      }
       if (Date.now() < suppressClickUntil) {
         e.preventDefault();
         return;
@@ -263,51 +301,99 @@ export async function setupUI() {
 
     const checkMagic = () => {
       const raw = normalize(magicInput.value);
-      // simple matching: accept any of accepted entries (case/width insensitive not fully handled)
-      const ok = accepted.some((a) => raw === normalize(a));
       const player = window.__playerInstance;
       const x = player ? player.gridX : null;
       const y = player ? player.gridY : null;
+      const floor = player ? player.floor : null;
 
-      // debug info: always log and show a debug alert so user can see what's happening
+      // debug info
       console.log(
         "[magic] input=",
         magicInput.value,
         "normalized=",
         raw,
-        "match=",
-        ok,
         "player=",
         x,
-        y
+        y,
+        "floor=",
+        floor
       );
 
-      if (ok && x === 5 && y === 5) {
-        try {
-          teleportPlayer(5, 5, 2);
-          showCustomAlert(
-            "「エレべ」を唱え、1Fから2Fに移動した。封筒Aを開こう"
-          );
-        } catch (e) {
+      // Special spell: えいぞう -> teleport from 2F (5,5) to 3F (5,5)
+      const showAccepted = ["えいぞう", "映像", "エイゾウ"];
+      const normalizedShow = showAccepted.map((s) => normalize(s));
+      const isShowSpell = normalizedShow.includes(raw);
+
+      if (isShowSpell) {
+        if (floor === 2 && x === 5 && y === 5) {
           try {
-            window.alert("魔法が唱えられた！正解です。");
-          } catch (e2) {}
+            teleportPlayer(5, 5, 3);
+            showCustomAlert(
+              "「えいぞう」を唱え、3Fに移動した。封筒Bを開こう。"
+            );
+          } catch (e) {
+            try {
+              window.alert("魔法が唱えられた！正解です。");
+            } catch (e2) {}
+          }
+        } else {
+          const msg = "正しい魔法陣の上で唱えよう";
+          console.log(
+            "[magic] correct-spell-wrong-place for えいぞう: player=",
+            x,
+            y,
+            "floor=",
+            floor
+          );
+          try {
+            showCustomAlert(msg);
+          } catch (e) {
+            try {
+              window.alert(msg);
+            } catch (e2) {}
+          }
         }
-      } else if (!ok) {
+        return;
+      }
+
+      // elevator spell handling (エレベ系)
+      const normalizedAccepted = accepted.map((a) => normalize(a));
+      const isElevatorSpell = normalizedAccepted.includes(raw);
+
+      if (isElevatorSpell) {
+        // only allow 1F -> 2F when standing on magic tile (5,5) on 1F
+        if (floor === 1 && x === 5 && y === 5) {
+          try {
+            teleportPlayer(5, 5, 2);
+            showCustomAlert(
+              "「エレべ」を唱え、1Fから2Fに移動した。封筒Aを開こう"
+            );
+          } catch (e) {
+            try {
+              window.alert("魔法が唱えられた！正解です。");
+            } catch (e2) {}
+          }
+        } else {
+          const msg = "正しい魔法陣の上で唱えよう";
+          console.log(
+            "[magic] correct-spell-wrong-place for エレべ: player=",
+            x,
+            y,
+            "floor=",
+            floor
+          );
+          try {
+            showCustomAlert(msg);
+          } catch (e) {
+            try {
+              window.alert(msg);
+            } catch (e2) {}
+          }
+        }
+      } else {
         // 入力自体が間違っている場合
         const msg = "呪文が正しくないようだ";
         console.log("[magic] wrong-spell:", raw);
-        try {
-          showCustomAlert(msg);
-        } catch (e) {
-          try {
-            window.alert(msg);
-          } catch (e2) {}
-        }
-      } else {
-        // 入力は正しいが場所が違う場合
-        const msg = "正しい魔法陣の上で唱えよう";
-        console.log("[magic] correct-spell-wrong-place: player=", x, y);
         try {
           showCustomAlert(msg);
         } catch (e) {

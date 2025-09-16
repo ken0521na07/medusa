@@ -8,10 +8,14 @@ export const TILE = {
   INFO_MSG: 2,
   INFO_HOLE: "info_hole",
   INFO_SNAKE: "info_snake",
+  INFO_SNAKE_G: "info_snake_g",
   INFO_IMG: "info_img",
+  INFO_STATUE: "info_statue",
   HOLE: "hole",
   SNAKE: "snake",
+  SNAKE_BOUNCE: "snake_bounce",
   BOX_1F: "box_1f",
+  BOX_3F: "box_3f",
   PUZZLE_1H: "puzzle_1h",
   PUZZLE_1S: "puzzle_1s",
   PUZZLE_1C: "puzzle_1c",
@@ -20,6 +24,10 @@ export const TILE = {
   PUZZLE_2S: "puzzle_2s",
   PUZZLE_2C: "puzzle_2c",
   PUZZLE_2D: "puzzle_2d",
+  PUZZLE_3: "puzzle_3",
+  STATUE_J: "statue_j",
+  MOVE: "move",
+  CHANGE: "change",
 };
 
 // --- フロア別マップ定義 ---
@@ -53,9 +61,25 @@ const MAP_2F = [
   ["puzzle_2h", "hole", 0, 0, "snake", 1, 0, "hole", 0, 0, "puzzle_2c"],
 ];
 
+// 3F の仮マップ（蛇が往復するエリアを含める）
+const MAP_3F = [
+  ["snake", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  ["snake", 0, 0, 1, 0, 0, 0, 0, 0, 1, 0],
+  ["snake", 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
+  ["snake", 0, 0, 0, 1, "info_snake_g", 0, "snake_bounce", 1, "box_3f", 0],
+  ["snake", 0, 0, 0, 1, 0, 0, "snake_bounce", 1, 0, 0],
+  [0, "statue_j", 0, "puzzle_3", 1, 0, 0, "snake_bounce", 1, "move", 0],
+  ["snake", 0, 0, 0, 1, 0, 0, "snake_bounce", 1, 0, 0],
+  ["snake", 0, 0, 0, 1, "info_statue", 0, "snake_bounce", 1, 0, 0],
+  ["snake", 0, 0, 1, 0, 0, 0, "snake_bounce", 1, 0, "snake_bounce"],
+  ["snake", 0, 1, 0, 0, 0, 0, 0, 0, 0, "snake_bounce"],
+  ["snake", 0, 0, 0, 0, "change", 0, 1, 0, 0, "snake_bounce"],
+];
+
 export const MAPS = {
   1: MAP_1F,
   2: MAP_2F,
+  3: MAP_3F,
 };
 
 // 元の状態を保持するコピー（フロア毎）
@@ -67,6 +91,7 @@ export const ORIGINAL_MAPS = Object.fromEntries(
 export const MAP_IMAGES = {
   1: "img/map/map_1f.jpg",
   2: "img/map/map_2f.jpg",
+  3: "img/map/map_3f.jpg",
 };
 
 export const allInfo = {
@@ -157,4 +182,4 @@ export const allPuzzles = {
 
 export const START_POS_X = 5;
 export const START_POS_Y = 5; // changed from 10 to 5 to start at y=5
-export const START_FLOOR = 2; // start on 1F by default
+export const START_FLOOR = 1; // start on 1F by default

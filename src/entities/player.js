@@ -7,6 +7,7 @@ import {
 } from "../core/constants.js";
 import { showCustomAlert } from "../ui/modals.js";
 import { emit } from "../core/eventBus.js";
+import * as snakeManager from "../managers/snakeManager.js";
 
 export default class Player extends GameObject {
   constructor(x, y, texturePath, mapService, floor = START_FLOOR) {
@@ -105,6 +106,10 @@ export default class Player extends GameObject {
       const t = this.mapService.getTile(x, y, this.floor);
       // stop if a wall (or numeric 1) blocks the view
       if (t === TILE.WALL || t === 1) return false;
+      // check dynamic snake entity as well
+      try {
+        if (snakeManager.getSnakeAt(x, y, this.floor)) return true;
+      } catch (e) {}
       if (t === TILE.SNAKE || t === "snake") return true;
       x += vec[0];
       y += vec[1];
@@ -119,6 +124,12 @@ export default class Player extends GameObject {
     const doOnClose = () => {
       try {
         this.mapService.onFall();
+      } catch (e) {}
+      // reset snake positions to their initial state when player dies
+      try {
+        if (typeof snakeManager.resetPositions === "function") {
+          snakeManager.resetPositions();
+        }
       } catch (e) {}
       try {
         // teleport to recorded start position for the current floor if present
@@ -189,6 +200,23 @@ export default class Player extends GameObject {
       return;
     }
 
+    // check if a snake entity currently occupies the target tile
+    try {
+      const snakeHere = snakeManager.getSnakeAt(newX, newY, this.floor);
+      if (snakeHere) {
+        // behave like TILE.SNAKE
+        this.direction = intendedDirection;
+        this.animationFrame = 0;
+        this.sprite.texture =
+          this.textures[this.direction][this.animationFrame];
+        try {
+          this._suppressUntil = Date.now() + 300;
+        } catch (e) {}
+        this.triggerFall("ヘビを見て石化してしまった...！");
+        return;
+      }
+    } catch (e) {}
+
     const targetTile = this.mapService.getTile(newX, newY, this.floor);
 
     switch (targetTile) {
@@ -242,15 +270,17 @@ export default class Player extends GameObject {
         this.direction = intendedDirection;
         this.sprite.texture =
           this.textures[this.direction][this.animationFrame];
-        // after moving normally, check if a snake is in sight along facing direction
+
+        // emit an event indicating the player moved so other systems (snake)
+        // can react AFTER the player finished moving.
         try {
-          if (this.isSnakeInSight()) {
-            try {
-              this._suppressUntil = Date.now() + 1000;
-            } catch (e) {}
-            this.triggerFall("ヘビを見て石化してしまった...！");
-          }
+          emit("playerMoved", {
+            x: this.gridX,
+            y: this.gridY,
+            floor: this.floor,
+          });
         } catch (e) {}
+
         return;
     }
   }
