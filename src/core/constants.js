@@ -21,6 +21,8 @@ export const TILE = {
   SNAKE_UNCLOCK_START: "snake_unclock_start",
   BOX_1F: "box_1f",
   BOX_3F: "box_3f",
+  BOX_CUSHION: "box_cushion",
+  BOX_CHANGE: "box_change",
   PUZZLE_1H: "puzzle_1h",
   PUZZLE_1S: "puzzle_1s",
   PUZZLE_1C: "puzzle_1c",
@@ -30,9 +32,14 @@ export const TILE = {
   PUZZLE_2C: "puzzle_2c",
   PUZZLE_2D: "puzzle_2d",
   PUZZLE_3: "puzzle_3",
+  PUZZLE_4H: "puzzle_4h",
+  PUZZLE_4S: "puzzle_4s",
+  PUZZLE_4C: "puzzle_4c",
+  PUZZLE_4D: "puzzle_4d",
   STATUE_J: "statue_j",
   MOVE: "move",
   CHANGE: "change",
+  CUSHON: "cushion",
 };
 
 // --- フロア別マップ定義 ---
@@ -82,30 +89,104 @@ const MAP_3F = [
 ];
 
 // 4F の仮マップ（時計回りの snake_clock サンプルを設置）
-const MAP_4F = Array.from({ length: MAP_HEIGHT }, () =>
-  Array.from({ length: MAP_WIDTH }, () => 0)
-);
 
-// place a small 3x3 clockwise loop in the top-left of 4F for snake_clock
-// coordinates (x,y):
-// (0,0) = snake_clock_start
-// (1,0) = snake_clock
-// (2,0) = snake_clock
-// (2,1) = snake_clock
-// (2,2) = snake_clock
-// (1,2) = snake_clock
-// (0,2) = snake_clock
-// (0,1) = snake_clock
-try {
-  MAP_4F[0][0] = "snake_clock_start";
-  MAP_4F[0][1] = "snake_clock"; // (1,0)
-  MAP_4F[0][2] = "snake_clock"; // (2,0)
-  MAP_4F[1][2] = "snake_clock"; // (2,1)
-  MAP_4F[2][2] = "snake_clock"; // (2,2)
-  MAP_4F[2][1] = "snake_clock"; // (1,2)
-  MAP_4F[2][0] = "snake_clock"; // (0,2)
-  MAP_4F[1][0] = "snake_clock"; // (0,1)
-} catch (e) {}
+const MAP_4F = [
+  [0, 0, 0, "cushion", 0, 0, 0, "hole", 0, 0, 0],
+  [0, 0, "puzzle_4d", 1, 1, 1, 1, 1, 0, 0, 0],
+  [
+    0,
+    "snake_clock",
+    "snake_clock",
+    "snake_clock",
+    0,
+    0,
+    0,
+    0,
+    0,
+    "puzzle_4c",
+    0,
+  ],
+  [0, "snake_clock_start", 0, "snake_clock_start", 1, 1, 0, 0, 1, 1, 1],
+  [
+    0,
+    "snake_clock",
+    1,
+    "snake_clock",
+    0,
+    0,
+    "snake_clock",
+    "snake_clock",
+    "snake_clock_start",
+    0,
+    0,
+  ],
+  [
+    "box_change",
+    "snake_clock",
+    "snake_clock",
+    "snake_clock",
+    0,
+    0,
+    "snake_clock",
+    1,
+    "snake_clock",
+    "hole",
+    "box_cushion",
+  ],
+  [
+    "snake_unclock",
+    "snake_unclock",
+    "snake_unclock",
+    "snake_unclock",
+    0,
+    0,
+    "snake_clock",
+    1,
+    "snake_clock",
+    0,
+    0,
+  ],
+  [
+    "snake_unclock",
+    0,
+    1,
+    "snake_unclock",
+    0,
+    0,
+    "snake_clock",
+    0,
+    "snake_clock_start",
+    0,
+    0,
+  ],
+  [
+    "snake_unclock_start",
+    "puzzle_4s",
+    1,
+    "snake_unclock",
+    0,
+    0,
+    "snake_clock",
+    "snake_clock",
+    "snake_clock",
+    0,
+    0,
+  ],
+  ["snake_unclock", 0, 0, "snake_unclock_start", 0, 0, 0, 0, "puzzle_4h", 0, 0],
+  [
+    "snake_unclock",
+    "snake_unclock",
+    "snake_unclock",
+    "snake_unclock",
+    0,
+    "change",
+    "hole",
+    "snake_bounce",
+    "snake_bounce_start",
+    "snake_bounce",
+    "snake_bounce",
+  ],
+];
 
 export const MAPS = {
   1: MAP_1F,

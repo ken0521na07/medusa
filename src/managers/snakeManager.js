@@ -67,80 +67,94 @@ export async function initSnakes(appLayers, { autoFromMap = true } = {}) {
     // iterate through floors defined in MAPS
     const floors = Object.keys(MAPS).map((k) => parseInt(k, 10));
     for (const f of floors) {
-      const points = new Set();
-      const starts = new Set();
+      // separate point/start sets per tile category to avoid mixing adjacent routes
+      const pointsClock = new Set();
+      const startsClock = new Set();
+      const pointsUnclock = new Set();
+      const startsUnclock = new Set();
+      const pointsBounce = new Set();
+      const startsBounce = new Set();
       const w = mapService.getWidth();
       const h = mapService.getHeight();
       for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
           const t = mapService.getTile(x, y, f);
+          // bounce
           if (t === TILE.SNAKE_BOUNCE || t === "snake_bounce") {
-            points.add(x + "," + y);
+            pointsBounce.add(x + "," + y);
           }
           if (t === TILE.SNAKE_BOUNCE_START || t === "snake_bounce_start") {
-            // treat start marker also as part of the path
-            points.add(x + "," + y);
-            starts.add(x + "," + y);
+            pointsBounce.add(x + "," + y);
+            startsBounce.add(x + "," + y);
           }
-          // detect clock-style snake loop tiles
+          // clock
           if (t === TILE.SNAKE_CLOCK || t === "snake_clock") {
-            points.add(x + "," + y);
+            pointsClock.add(x + "," + y);
           }
           if (t === TILE.SNAKE_CLOCK_START || t === "snake_clock_start") {
-            points.add(x + "," + y);
-            starts.add(x + "," + y);
+            pointsClock.add(x + "," + y);
+            startsClock.add(x + "," + y);
+          }
+          // unclock
+          if (t === TILE.SNAKE_UNCLOCK || t === "snake_unclock") {
+            pointsUnclock.add(x + "," + y);
+          }
+          if (t === TILE.SNAKE_UNCLOCK_START || t === "snake_unclock_start") {
+            pointsUnclock.add(x + "," + y);
+            startsUnclock.add(x + "," + y);
           }
         }
       }
-      if (points.size === 0) continue;
-      // group connected components (each becomes one snake path)
-      const comps = findConnectedComponents(points);
-      for (const comp of comps) {
-        // determine if this component contains any clock tiles by checking map
-        const hasClock = comp.some((p) => {
-          const tt = mapService.getTile(p.x, p.y, f);
-          return (
-            tt === TILE.SNAKE_CLOCK ||
-            tt === "snake_clock" ||
-            tt === TILE.SNAKE_CLOCK_START ||
-            tt === "snake_clock_start"
-          );
+
+      // helper to process a category
+      const processCategory = (pointsSet, startsSet, mode, sortFn) => {
+        if (pointsSet.size === 0) return;
+        const comps = findConnectedComponents(pointsSet);
+        for (const comp of comps) {
+          // apply custom sort for ordering
+          try {
+            sortFn(comp);
+          } catch (e) {}
+          const sis = [];
+          for (let i = 0; i < comp.length; i++) {
+            const key = comp[i].x + "," + comp[i].y;
+            if (startsSet.has(key)) sis.push(i);
+          }
+          if (sis.length > 0) {
+            for (const sidx of sis)
+              addSnake({ floor: f, path: comp, mode, startIndex: sidx });
+          } else {
+            addSnake({ floor: f, path: comp, mode, startIndex: 0 });
+          }
+        }
+      };
+
+      // process clock: clockwise sort (descending angle)
+      processCategory(pointsClock, startsClock, "clock", (comp) => {
+        const cx = comp.reduce((s, p) => s + p.x, 0) / comp.length;
+        const cy = comp.reduce((s, p) => s + p.y, 0) / comp.length;
+        comp.sort((a, b) => {
+          const aa = Math.atan2(a.y - cy, a.x - cx);
+          const ab = Math.atan2(b.y - cy, b.x - cx);
+          return ab - aa;
         });
-        if (hasClock) {
-          // compute centroid
-          const cx = comp.reduce((s, p) => s + p.x, 0) / comp.length;
-          const cy = comp.reduce((s, p) => s + p.y, 0) / comp.length;
-          // sort points by angle around centroid to get clockwise order (atan2 gives CCW from +x; we'll invert for clockwise)
-          comp.sort((a, b) => {
-            const aa = Math.atan2(a.y - cy, a.x - cx);
-            const ab = Math.atan2(b.y - cy, b.x - cx);
-            return aa - ab; // ascending raw atan2 gives desired clockwise order on grid
-          });
-          // choose starting index if any point in this comp was marked as start
-          let startIndex = 0;
-          for (let i = 0; i < comp.length; i++) {
-            const key = comp[i].x + "," + comp[i].y;
-            if (starts.has(key)) {
-              startIndex = i;
-              break;
-            }
-          }
-          addSnake({ floor: f, path: comp, mode: "clock", startIndex });
-        } else {
-          // sort comp for a predictable path order: prefer top-to-bottom then left-to-right
-          comp.sort((a, b) => a.y - b.y || a.x - b.x);
-          // choose starting index if any point in this comp was marked as start
-          let startIndex = 0;
-          for (let i = 0; i < comp.length; i++) {
-            const key = comp[i].x + "," + comp[i].y;
-            if (starts.has(key)) {
-              startIndex = i;
-              break;
-            }
-          }
-          addSnake({ floor: f, path: comp, mode: "bounce", startIndex });
-        }
-      }
+      });
+
+      // process unclock: counter-clockwise sort (ascending angle)
+      processCategory(pointsUnclock, startsUnclock, "unclock", (comp) => {
+        const cx = comp.reduce((s, p) => s + p.x, 0) / comp.length;
+        const cy = comp.reduce((s, p) => s + p.y, 0) / comp.length;
+        comp.sort((a, b) => {
+          const aa = Math.atan2(a.y - cy, a.x - cx);
+          const ab = Math.atan2(b.y - cy, b.x - cx);
+          return aa - ab;
+        });
+      });
+
+      // process bounce (fallback)
+      processCategory(pointsBounce, startsBounce, "bounce", (comp) => {
+        comp.sort((a, b) => a.y - b.y || a.x - b.x);
+      });
     }
   }
 
@@ -252,6 +266,9 @@ export function stepSnakes({ onlyVisible = true } = {}) {
     } else if (s.mode === "clock") {
       // clockwise loop: always advance forward
       s.index = (s.index + 1) % s.path.length;
+    } else if (s.mode === "unclock") {
+      // counter-clockwise loop: step backward
+      s.index = (s.index - 1 + s.path.length) % s.path.length;
     } else {
       // default fallback: bounce
       const nextIndex = s.index + s.dir;
