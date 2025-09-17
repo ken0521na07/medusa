@@ -13,7 +13,13 @@ import {
   openPuzzleModal,
   closePuzzleModal,
 } from "./modals.js";
-import { TILE, allInfo, START_FLOOR, playerState } from "../core/constants.js";
+import {
+  TILE,
+  allInfo,
+  START_FLOOR,
+  playerState,
+  allPuzzles,
+} from "../core/constants.js";
 // import { startTimer as startTimerCore } from "./timer.js";
 import Player from "../entities/player.js";
 import { initEngine, getApp } from "../core/engine.js";
@@ -212,45 +218,28 @@ export async function setupUI() {
     const currentTileType = mapService.getTile(x, y);
 
     switch (currentTileType) {
-      case 2:
-        showCustomAlert("壁に何か文字が刻まれている...");
-        break;
-      case TILE.INFO_SNAKE_G:
-        if (!allInfo.info_snake_g.unlocked) {
-          allInfo.info_snake_g.unlocked = true;
-          mapService.setTile(x, y, 0);
-          showCustomAlert(`${allInfo.info_snake_g.title}を入手した`);
-        } else {
-          showCustomAlert(`既に${allInfo.info_snake_g.title}は入手している。`);
+      case TILE.PUZZLE_3:
+        // 3F の一括解放：1マス調べるだけで4つ全て解放される
+        try {
+          const set = allPuzzles["elevator_3f"];
+          if (set) {
+            set.unlocked = true;
+            for (const p of set.pieces) p.unlocked = true;
+            // remove tile from map
+            mapService.setTile(x, y, 0);
+            // show custom alert instead of opening puzzle modal
+            try {
+              showCustomAlert("謎を入手した");
+            } catch (e) {
+              try {
+                window.alert("謎を入手した");
+              } catch (e) {}
+            }
+          }
+        } catch (e) {
+          console.error("failed to unlock 3F puzzles", e);
         }
         break;
-      case TILE.INFO_STATUE:
-        if (!allInfo.info_statue.unlocked) {
-          allInfo.info_statue.unlocked = true;
-          mapService.setTile(x, y, 0);
-          showCustomAlert(`${allInfo.info_statue.title}を入手した`);
-        } else {
-          showCustomAlert(`既に${allInfo.info_statue.title}は入手している。`);
-        }
-        break;
-      case TILE.INFO_HOLE:
-        if (!allInfo.about_hole.unlocked) {
-          showCustomAlert("「穴について」の情報を得た。");
-          allInfo.about_hole.unlocked = true;
-        } else {
-          showCustomAlert("既に「穴について」の情報は得ている。");
-        }
-        break;
-      case TILE.INFO_SNAKE:
-        if (!allInfo.info_snake.unlocked) {
-          allInfo.info_snake.unlocked = true;
-          mapService.setTile(x, y, 0);
-          showCustomAlert(`${allInfo.info_snake.title}を入手した`);
-        } else {
-          showCustomAlert(`既に${allInfo.info_snake.title}は入手している。`);
-        }
-        break;
-      case TILE.INFO_IMG:
         if (!allInfo.info_img.unlocked) {
           allInfo.info_img.unlocked = true;
           mapService.setTile(x, y, 0);
@@ -273,10 +262,28 @@ export async function setupUI() {
         }
         break;
       case TILE.PUZZLE_1H:
-      case TILE.PUZZLE_1S:
-      case TILE.PUZZLE_1C:
+        handleGetPuzzlePiece("elevator_1f", currentTileType, { x, y });
+        showCustomAlert(
+          "ハートの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
+        );
+        break;
       case TILE.PUZZLE_1D:
         handleGetPuzzlePiece("elevator_1f", currentTileType, { x, y });
+        showCustomAlert(
+          "ダイヤの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
+        );
+        break;
+      case TILE.PUZZLE_1S:
+        handleGetPuzzlePiece("elevator_1f", currentTileType, { x, y });
+        showCustomAlert(
+          "スペードの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
+        );
+        break;
+      case TILE.PUZZLE_1C:
+        handleGetPuzzlePiece("elevator_1f", currentTileType, { x, y });
+        showCustomAlert(
+          "クローバーの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
+        );
         break;
       case TILE.PUZZLE_2H:
         // ハートの謎
@@ -286,7 +293,9 @@ export async function setupUI() {
           { x, y },
           { suppressAlert: true }
         );
-        showCustomAlert("ハートの謎を入手した。");
+        showCustomAlert(
+          "ハートの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
+        );
         break;
       case TILE.PUZZLE_2D:
         // ダイヤの謎
@@ -296,7 +305,9 @@ export async function setupUI() {
           { x, y },
           { suppressAlert: true }
         );
-        showCustomAlert("ダイヤの謎を入手した。");
+        showCustomAlert(
+          "ダイヤの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
+        );
         break;
       case TILE.PUZZLE_2S:
         // スペードの謎
@@ -306,7 +317,9 @@ export async function setupUI() {
           { x, y },
           { suppressAlert: true }
         );
-        showCustomAlert("スペードの謎を入手した。");
+        showCustomAlert(
+          "スペードの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
+        );
         break;
       case TILE.PUZZLE_2C:
         // クローバーの謎
@@ -316,7 +329,46 @@ export async function setupUI() {
           { x, y },
           { suppressAlert: true }
         );
-        showCustomAlert("クローバーの謎を入手した。");
+        showCustomAlert(
+          "クローバーの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
+        );
+        break;
+      case TILE.PUZZLE_3:
+        // 3F の一括解放：1マス調べるだけで4つ全て解放される
+        // proceed to unlock via synchronous access to allPuzzles
+        try {
+          // perform changes directly on allPuzzles imported at module top
+          const set = allPuzzles["elevator_3f"];
+          if (set) {
+            set.unlocked = true;
+            for (const p of set.pieces) {
+              p.unlocked = true;
+            }
+            // remove the tile from the map so it can't be obtained again
+            mapService.setTile(x, y, 0);
+            // show a generic pickup message for 3F
+            showCustomAlert(
+              "謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
+            );
+            // open puzzle modal to show the set
+            try {
+              openPuzzleModal();
+            } catch (e) {}
+            const puzzleGridTitle =
+              document.getElementById("puzzle-grid-title");
+            const puzzlePage1 = document.getElementById("puzzle-page-1");
+            const puzzlePage2 = document.getElementById("puzzle-page-2");
+            const puzzleGrid = document.getElementById("puzzle-grid");
+            if (puzzleGridTitle)
+              puzzleGridTitle.textContent = set.title || "謎|3F";
+            if (puzzlePage1) puzzlePage1.style.display = "none";
+            if (puzzlePage2) puzzlePage2.style.display = "flex";
+            if (typeof renderPuzzleGrid === "function")
+              renderPuzzleGrid(set, puzzleGrid);
+          }
+        } catch (e) {
+          console.error("failed to unlock 3F puzzles", e);
+        }
         break;
       default:
         break;

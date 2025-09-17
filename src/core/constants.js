@@ -136,7 +136,7 @@ export const playerState = {
 
 export const allPuzzles = {
   elevator_1f: {
-    title: "謎|エレベ1F",
+    title: "謎|1F",
     unlocked: false,
     bottomImages: ["img/1f_answer.png", "img/elev_1_up.png"],
     pieces: [
@@ -169,7 +169,7 @@ export const allPuzzles = {
   elevator_2f: {
     title: "謎|2F",
     unlocked: false,
-    bottomImages: [],
+    bottomImages: ["img/1f_answer.png", "img/elev_1_up.png"],
     pieces: [
       {
         id: TILE.PUZZLE_2H,
@@ -194,6 +194,37 @@ export const allPuzzles = {
         image: "img/nazo/2f_diamond.png",
         unlocked: false,
         answers: ["いけん"],
+      },
+    ],
+  },
+  elevator_3f: {
+    title: "謎|3F",
+    unlocked: false,
+    bottomImages: ["img/1f_answer.png", "img/elev_1_up.png"],
+    pieces: [
+      {
+        id: "3f_heart",
+        image: "img/nazo/3f_heart.png",
+        unlocked: false,
+        answers: ["たかん"],
+      },
+      {
+        id: "3f_diamond",
+        image: "img/nazo/3f_diamond.png",
+        unlocked: false,
+        answers: ["いなか"],
+      },
+      {
+        id: "3f_spade",
+        image: "img/nazo/3f_spade.png",
+        unlocked: false,
+        answers: ["せぶん"],
+      },
+      {
+        id: "3f_clover",
+        image: "img/nazo/3f_clover.png",
+        unlocked: false,
+        answers: ["きんこ"],
       },
     ],
   },

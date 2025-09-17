@@ -106,7 +106,12 @@ export default class Player extends GameObject {
       const t = this.mapService.getTile(x, y, this.floor);
       // stop if a wall (or numeric 1) blocks the view
       if (t === TILE.WALL || t === 1) return false;
-      // check dynamic snake entity as well
+      // stop if a statue (or any tile that starts with "statue_") blocks the view
+      // this prevents petrification when a snake is behind a statue
+      if (typeof t === "string" && t.startsWith("statue")) return false;
+      // stop if a statue constant is used
+      if (t === TILE.STATUE_J) return false;
+      // check dynamic snake entity as well (only after blockers checked)
       try {
         if (snakeManager.getSnakeAt(x, y, this.floor)) return true;
       } catch (e) {}

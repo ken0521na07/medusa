@@ -145,7 +145,7 @@ export function addSnake({ floor = 3, path = [], mode = "bounce" } = {}) {
     index: 0,
     // initialIndex records the spawn/starting index so resets return here
     initialIndex: 0,
-    dir: 1, // for bounce: 1 down the array, -1 up; for loop: 1 moves forward
+    dir: -1, // for bounce: -1 start moving 'up' the array, 1 down; for loop: 1 moves forward
     mode, // 'bounce' or 'loop' (future extension)
     sprite: null,
     addedToLayer: false,
@@ -282,7 +282,7 @@ export function resetPositions() {
     for (const s of snakes) {
       if (!s.path || s.path.length === 0) continue;
       s.index = typeof s.initialIndex === "number" ? s.initialIndex : 0;
-      s.dir = 1;
+      s.dir = -1;
       const pos = s.path[s.index];
       try {
         if (s.sprite) {

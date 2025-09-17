@@ -1,6 +1,6 @@
 import { allPuzzles } from "../core/constants.js";
 import { setTile } from "./mapService.js";
-import { openPuzzleModal } from "../ui/modals.js";
+import { openPuzzleModal, showCustomAlert } from "../ui/modals.js";
 
 // popup DOM refs
 const popupOverlay = document.getElementById("puzzle-popup-overlay");
@@ -119,9 +119,47 @@ export function handleGetPuzzlePiece(setId, pieceId, playerPos, options = {}) {
     // remove from map
     if (playerPos && typeof playerPos.x === "number")
       setTile(playerPos.x, playerPos.y, 0);
-    // show native alert indicating piece obtained unless suppressed
+    // show native/custom alert indicating piece obtained unless suppressed
     try {
-      if (!options.suppressAlert) window.alert("謎を入手した");
+      if (!options.suppressAlert) {
+        // prefer a suit-aware message for 1F/2F pieces; for 3F use simplified message
+        const pid = String(puzzlePiece.id || "");
+        const sid = String(setId || "").toLowerCase();
+        let message = "謎を入手した";
+
+        // If this is not a 3F set, try to infer suit and show the detailed message
+        if (!sid.includes("3f")) {
+          let suitName = null;
+          if (/heart|ハート/i.test(pid)) suitName = "ハート";
+          else if (/diamond|dia|ダイヤ/i.test(pid)) suitName = "ダイヤ";
+          else if (/spade|スペード/i.test(pid)) suitName = "スペード";
+          else if (/clover|clover|clo/i.test(pid)) suitName = "クラブ";
+          else {
+            // fallback to short id style like puzzle_1h / puzzle_2d etc.
+            if (/_?\w*h$|1h|2h/i.test(pid)) suitName = "ハート";
+            else if (/_?\w*d$|1d|2d/i.test(pid)) suitName = "ダイヤ";
+            else if (/_?\w*c$|1c|2c/i.test(pid)) suitName = "クラブ";
+            else if (/_?\w*s$|1s|2s/i.test(pid)) suitName = "スペード";
+          }
+
+          if (suitName) {
+            message = `(${suitName})の謎を入手した。画面の【謎】ボタンから入手した謎を確認できます`;
+          } else {
+            message =
+              "謎を入手した。画面の【謎】ボタンから入手した謎を確認できます";
+          }
+        } else {
+          // 3F: simplified message per request
+          message = "謎を入手した";
+        }
+
+        if (typeof showCustomAlert === "function") {
+          // showCustomAlert without autoClose so user must close it manually
+          showCustomAlert(message, { allowOverlayClose: true });
+        } else {
+          window.alert(message);
+        }
+      }
     } catch (e) {}
     // update UI: when opening puzzle modal, render grid will show only unlocked pieces as their images
   }
