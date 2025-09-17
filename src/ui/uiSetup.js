@@ -480,19 +480,39 @@ export async function setupUI() {
         (raw || "").toLowerCase()
       );
       if (isMoveSpell) {
-        if (!playerState.gotMoveMagic) {
-          const msg = "正しい魔法陣の上で唱えよう";
-          try {
-            showCustomAlert(msg);
-          } catch (e) {
+        // The move spell (fox) may only be used on 3F at (9,5).
+        if (floor === 3 && x === 9 && y === 5) {
+          if (!playerState.gotMoveMagic) {
+            const msg = "正しい魔法陣の上で唱えよう";
             try {
-              window.alert(msg);
-            } catch (e2) {}
+              showCustomAlert(msg);
+            } catch (e) {
+              try {
+                window.alert(msg);
+              } catch (e2) {}
+            }
+            return;
           }
+          // correct word and correct place -> open move modal
+          openMoveModal();
           return;
         }
-        // open modal to get statue name and direction
-        openMoveModal();
+        // correct word but wrong place
+        const msg = "正しい魔法陣の上で唱えよう";
+        console.log(
+          "[magic] correct-spell-wrong-place for fox: player=",
+          x,
+          y,
+          "floor=",
+          floor
+        );
+        try {
+          showCustomAlert(msg);
+        } catch (e) {
+          try {
+            window.alert(msg);
+          } catch (e2) {}
+        }
         return;
       }
 
@@ -529,8 +549,14 @@ export async function setupUI() {
       }
 
       // elevator spell handling (エレベ系)
+      // existing accepted words (エレべ)
       const normalizedAccepted = accepted.map((a) => normalize(a));
       const isElevatorSpell = normalizedAccepted.includes(raw);
+
+      // New: 3F->4F spell words
+      const up4Accepted = ["たいせき", "体積", "タイセキ"];
+      const normalizedUp4 = up4Accepted.map((s) => normalize(s));
+      const isUp4Spell = normalizedUp4.includes(raw);
 
       if (isElevatorSpell) {
         // only allow 1F -> 2F when standing on magic tile (5,5) on 1F
@@ -562,9 +588,39 @@ export async function setupUI() {
             } catch (e2) {}
           }
         }
+      } else if (isUp4Spell) {
+        // allow 3F -> 4F when standing on magic tile (5,5) on 3F
+        if (floor === 3 && x === 5 && y === 5) {
+          try {
+            teleportPlayer(5, 5, 4);
+            showCustomAlert(
+              "「エレべ」を唱え、3Fから4Fに移動した。封筒Cを開こう"
+            );
+          } catch (e) {
+            try {
+              window.alert("魔法が唱えられた！正解です。");
+            } catch (e2) {}
+          }
+        } else {
+          const msg = "正しい魔法陣の上で唱えよう";
+          console.log(
+            "[magic] correct-spell-wrong-place for エレべ(3->4): player=",
+            x,
+            y,
+            "floor=",
+            floor
+          );
+          try {
+            showCustomAlert(msg);
+          } catch (e) {
+            try {
+              window.alert(msg);
+            } catch (e2) {}
+          }
+        }
       } else {
         // 入力自体が間違っている場合
-        const msg = "呪文が正しくないようだ";
+        const msg = "呪文が間違っているようだ";
         console.log("[magic] wrong-spell:", raw);
         try {
           showCustomAlert(msg);
@@ -745,12 +801,14 @@ function openMoveModal() {
       const dir = select.value;
       // Validate: must be "ジェシー" and direction "北"
       if (name !== "ジェシー") {
+        modal.style.display = "none";
         showCustomAlert("入力が正しくないようだ");
         return;
       }
       // find statue_j in statues list
       const s = statues.find((st) => st.nameKey === "statue_j");
       if (!s) {
+        modal.style.display = "none";
         showCustomAlert("その像は見つからないようだ");
         return;
       }
@@ -758,6 +816,7 @@ function openMoveModal() {
       const dirMap = { 東: [1, 0], 西: [-1, 0], 南: [0, 1], 北: [0, -1] };
       const vec = dirMap[dir];
       if (!vec) {
+        modal.style.display = "none";
         showCustomAlert("入力が正しくないようだ");
         return;
       }
@@ -801,6 +860,7 @@ function openMoveModal() {
       }
 
       if (blocked) {
+        modal.style.display = "none";
         showCustomAlert("入力が正しくないようだ");
         return;
       }

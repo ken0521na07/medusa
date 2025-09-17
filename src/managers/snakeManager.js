@@ -82,24 +82,64 @@ export async function initSnakes(appLayers, { autoFromMap = true } = {}) {
             points.add(x + "," + y);
             starts.add(x + "," + y);
           }
+          // detect clock-style snake loop tiles
+          if (t === TILE.SNAKE_CLOCK || t === "snake_clock") {
+            points.add(x + "," + y);
+          }
+          if (t === TILE.SNAKE_CLOCK_START || t === "snake_clock_start") {
+            points.add(x + "," + y);
+            starts.add(x + "," + y);
+          }
         }
       }
       if (points.size === 0) continue;
       // group connected components (each becomes one snake path)
       const comps = findConnectedComponents(points);
       for (const comp of comps) {
-        // sort comp for a predictable path order: prefer top-to-bottom then left-to-right
-        comp.sort((a, b) => a.y - b.y || a.x - b.x);
-        // choose starting index if any point in this comp was marked as start
-        let startIndex = 0;
-        for (let i = 0; i < comp.length; i++) {
-          const key = comp[i].x + "," + comp[i].y;
-          if (starts.has(key)) {
-            startIndex = i;
-            break;
+        // determine if this component contains any clock tiles by checking map
+        const hasClock = comp.some((p) => {
+          const tt = mapService.getTile(p.x, p.y, f);
+          return (
+            tt === TILE.SNAKE_CLOCK ||
+            tt === "snake_clock" ||
+            tt === TILE.SNAKE_CLOCK_START ||
+            tt === "snake_clock_start"
+          );
+        });
+        if (hasClock) {
+          // compute centroid
+          const cx = comp.reduce((s, p) => s + p.x, 0) / comp.length;
+          const cy = comp.reduce((s, p) => s + p.y, 0) / comp.length;
+          // sort points by angle around centroid to get clockwise order (atan2 gives CCW from +x; we'll invert for clockwise)
+          comp.sort((a, b) => {
+            const aa = Math.atan2(a.y - cy, a.x - cx);
+            const ab = Math.atan2(b.y - cy, b.x - cx);
+            return aa - ab; // ascending raw atan2 gives desired clockwise order on grid
+          });
+          // choose starting index if any point in this comp was marked as start
+          let startIndex = 0;
+          for (let i = 0; i < comp.length; i++) {
+            const key = comp[i].x + "," + comp[i].y;
+            if (starts.has(key)) {
+              startIndex = i;
+              break;
+            }
           }
+          addSnake({ floor: f, path: comp, mode: "clock", startIndex });
+        } else {
+          // sort comp for a predictable path order: prefer top-to-bottom then left-to-right
+          comp.sort((a, b) => a.y - b.y || a.x - b.x);
+          // choose starting index if any point in this comp was marked as start
+          let startIndex = 0;
+          for (let i = 0; i < comp.length; i++) {
+            const key = comp[i].x + "," + comp[i].y;
+            if (starts.has(key)) {
+              startIndex = i;
+              break;
+            }
+          }
+          addSnake({ floor: f, path: comp, mode: "bounce", startIndex });
         }
-        addSnake({ floor: f, path: comp, mode: "bounce", startIndex });
       }
     }
   }
@@ -208,6 +248,9 @@ export function stepSnakes({ onlyVisible = true } = {}) {
       }
       s.index += s.dir;
     } else if (s.mode === "loop") {
+      s.index = (s.index + 1) % s.path.length;
+    } else if (s.mode === "clock") {
+      // clockwise loop: always advance forward
       s.index = (s.index + 1) % s.path.length;
     } else {
       // default fallback: bounce

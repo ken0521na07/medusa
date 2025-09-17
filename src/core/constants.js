@@ -15,6 +15,10 @@ export const TILE = {
   SNAKE: "snake",
   SNAKE_BOUNCE: "snake_bounce",
   SNAKE_BOUNCE_START: "snake_bounce_start",
+  SNAKE_CLOCK: "snake_clock",
+  SNAKE_CLOCK_START: "snake_clock_start",
+  SNAKE_UNCLOCK: "snake_unclock",
+  SNAKE_UNCLOCK_START: "snake_unclock_start",
   BOX_1F: "box_1f",
   BOX_3F: "box_3f",
   PUZZLE_1H: "puzzle_1h",
@@ -77,10 +81,37 @@ const MAP_3F = [
   ["snake", 0, 0, 0, 0, "change", 0, 1, 0, 0, "snake_bounce"],
 ];
 
+// 4F の仮マップ（時計回りの snake_clock サンプルを設置）
+const MAP_4F = Array.from({ length: MAP_HEIGHT }, () =>
+  Array.from({ length: MAP_WIDTH }, () => 0)
+);
+
+// place a small 3x3 clockwise loop in the top-left of 4F for snake_clock
+// coordinates (x,y):
+// (0,0) = snake_clock_start
+// (1,0) = snake_clock
+// (2,0) = snake_clock
+// (2,1) = snake_clock
+// (2,2) = snake_clock
+// (1,2) = snake_clock
+// (0,2) = snake_clock
+// (0,1) = snake_clock
+try {
+  MAP_4F[0][0] = "snake_clock_start";
+  MAP_4F[0][1] = "snake_clock"; // (1,0)
+  MAP_4F[0][2] = "snake_clock"; // (2,0)
+  MAP_4F[1][2] = "snake_clock"; // (2,1)
+  MAP_4F[2][2] = "snake_clock"; // (2,2)
+  MAP_4F[2][1] = "snake_clock"; // (1,2)
+  MAP_4F[2][0] = "snake_clock"; // (0,2)
+  MAP_4F[1][0] = "snake_clock"; // (0,1)
+} catch (e) {}
+
 export const MAPS = {
   1: MAP_1F,
   2: MAP_2F,
   3: MAP_3F,
+  4: MAP_4F,
 };
 
 // 元の状態を保持するコピー（フロア毎）
@@ -93,6 +124,7 @@ export const MAP_IMAGES = {
   1: "img/map/map_1f.jpg",
   2: "img/map/map_2f.jpg",
   3: "img/map/map_3f.jpg",
+  4: "img/map/map_4f.jpg",
 };
 
 export const allInfo = {
@@ -232,4 +264,4 @@ export const allPuzzles = {
 
 export const START_POS_X = 5;
 export const START_POS_Y = 5; // changed from 10 to 5 to start at y=5
-export const START_FLOOR = 3; // start on 1F by default
+export const START_FLOOR = 4; // start on 1F by default
