@@ -87,6 +87,11 @@ export default class Player extends GameObject {
   // check whether a `snake` tile exists along the player's current
   // facing direction (straight line) before being blocked by a wall.
   isSnakeInSight() {
+    // If a snake currently occupies the player's own tile, treat as seen.
+    try {
+      if (snakeManager.getSnakeAt(this.gridX, this.gridY, this.floor))
+        return true;
+    } catch (e) {}
     const dirMap = {
       down: [0, 1],
       up: [0, -1],
