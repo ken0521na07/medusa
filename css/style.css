@@ -317,6 +317,61 @@ html {
   padding: 6px;
 }
 
+/* ensure content preserves newlines and wraps nicely for info/magic detail */
+#magic-page-2 #magic-detail p,
+#info-page-2 #info-detail p {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* Make magic page layout identical to info page layout */
+#magic-page-2 {
+  display: flex;
+  flex-direction: column; /* header on top, detail below */
+  width: 100%;
+}
+
+#magic-page-2 .modal-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start; /* keep back button and title together on the left */
+  gap: 8px;
+  margin-bottom: 12px; /* spacing before the detail */
+}
+
+#magic-page-2 .modal-header h3,
+#magic-page-2 .modal-header #magic-detail-title {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.2;
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+#magic-page-2 #magic-detail {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+/* constrain modal content height so header + detail stack nicely with scroll */
+.modal-content.info-modal-content {
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+#magic-page-1 .info-list,
+#info-page-1 .info-list {
+  /* ensure list scrolls if long */
+  max-height: calc(80vh - 140px);
+  overflow-y: auto;
+}
 /* 画像の大きさは必要に応じて調整してください */
 #puzzle-bottom-images img {
   display: block;
@@ -417,7 +472,7 @@ html {
   width: auto;
   height: auto;
   -o-object-fit: contain;
-     object-fit: contain;
+  object-fit: contain;
 }
 
 /* 小さい画面向け微調整 */
@@ -662,4 +717,4 @@ button {
   width: 100%;
   padding: 10px;
   box-sizing: border-box;
-}/*# sourceMappingURL=style.css.map */
+} /*# sourceMappingURL=style.css.map */

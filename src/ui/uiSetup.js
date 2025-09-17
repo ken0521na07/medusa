@@ -7,6 +7,7 @@ import {
   closeInfoModal,
   showInfoDetail,
   initInfoModalHandlers,
+  renderMagicList,
 } from "../managers/infoManager.js";
 import {
   showCustomAlert,
@@ -240,25 +241,78 @@ export async function setupUI() {
           console.error("failed to unlock 3F puzzles", e);
         }
         break;
-        if (!allInfo.info_img.unlocked) {
-          allInfo.info_img.unlocked = true;
-          mapService.setTile(x, y, 0);
-          showCustomAlert(`${allInfo.info_img.title}を入手した`);
-        } else {
-          showCustomAlert(`既に${allInfo.info_img.title}は入手している。`);
-        }
+      case TILE.INFO_IMG:
+      case TILE.INFO_HOLE:
+      case TILE.INFO_SNAKE:
+      case TILE.INFO_SNAKE_G:
+      case TILE.INFO_STATUE:
+        try {
+          const key = currentTileType; // matches allInfo keys like 'info_img'
+          if (allInfo && allInfo[key]) allInfo[key].unlocked = true;
+        } catch (e) {}
+        // remove tile so it can't be obtained again
+        mapService.setTile(x, y, 0);
+        try {
+          const infoObj = allInfo && allInfo[currentTileType];
+          const title = (infoObj && infoObj.title) || "情報";
+          showCustomAlert(`${title}を手に入れた`);
+        } catch (e) {}
         break;
       case TILE.BOX_1F:
-        showCustomAlert("魔法「エレベ」を入手した。冊子4ページを開こう");
-        mapService.setTile(x, y, 0);
+        {
+          try {
+            if (allInfo && allInfo.box_1f) allInfo.box_1f.unlocked = true;
+          } catch (e) {}
+          mapService.setTile(x, y, 0);
+          try {
+            showCustomAlert("魔法「エレベ」を入手した。冊子4ページを開こう");
+          } catch (e) {}
+        }
         break;
       case TILE.BOX_3F:
-        if (!playerState.gotMoveMagic) {
-          playerState.gotMoveMagic = true;
+        {
+          if (!playerState.gotMoveMagic) {
+            playerState.gotMoveMagic = true;
+            try {
+              if (allInfo && allInfo.box_3f) allInfo.box_3f.unlocked = true;
+            } catch (e) {}
+            mapService.setTile(x, y, 0);
+            try {
+              showCustomAlert(
+                "魔法「ムーブ」を入手した。冊子６ページを開こう。"
+              );
+            } catch (e) {}
+          } else {
+            showCustomAlert("既に魔法「ムーブ」は入手している。");
+          }
+        }
+        break;
+      case TILE.BOX_CUSHION:
+        {
+          try {
+            if (allInfo && allInfo.box_cushion)
+              allInfo.box_cushion.unlocked = true;
+          } catch (e) {}
           mapService.setTile(x, y, 0);
-          showCustomAlert("魔法「ムーブ」を入手した。冊子６ページを開こう。");
-        } else {
-          showCustomAlert("既に魔法「ムーブ」は入手している。");
+          try {
+            showCustomAlert(
+              "魔法「クッショ」を入手した。冊子10ページを開こう。"
+            );
+          } catch (e) {}
+        }
+        break;
+      case TILE.BOX_CHANGE:
+        {
+          try {
+            if (allInfo && allInfo.box_change)
+              allInfo.box_change.unlocked = true;
+          } catch (e) {}
+          mapService.setTile(x, y, 0);
+          try {
+            showCustomAlert(
+              "魔法「チェンジ」を入手した。冊子８ページを開こう。"
+            );
+          } catch (e) {}
         }
         break;
       case TILE.PUZZLE_1H:
@@ -333,6 +387,30 @@ export async function setupUI() {
           "クローバーの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
         );
         break;
+      case TILE.PUZZLE_4H:
+        handleGetPuzzlePiece("elevator_4f", currentTileType, { x, y });
+        showCustomAlert(
+          "ハートの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
+        );
+        break;
+      case TILE.PUZZLE_4D:
+        handleGetPuzzlePiece("elevator_4f", currentTileType, { x, y });
+        showCustomAlert(
+          "ダイヤの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
+        );
+        break;
+      case TILE.PUZZLE_4S:
+        handleGetPuzzlePiece("elevator_4f", currentTileType, { x, y });
+        showCustomAlert(
+          "スペードの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
+        );
+        break;
+      case TILE.PUZZLE_4C:
+        handleGetPuzzlePiece("elevator_4f", currentTileType, { x, y });
+        showCustomAlert(
+          "クローバーの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
+        );
+        break;
       case TILE.PUZZLE_3:
         // 3F の一括解放：1マス調べるだけで4つ全て解放される
         // proceed to unlock via synchronous access to allPuzzles
@@ -382,14 +460,17 @@ export async function setupUI() {
   const keywordModal = document.getElementById("keyword-modal");
   if (itemBtn && keywordModal) {
     itemBtn.addEventListener("click", () => {
+      const list = document.getElementById("magic-list");
+      // render magic list (only unlocked box_* entries)
+      try {
+        // call imported renderMagicList directly to avoid scope issues
+        if (typeof renderMagicList === "function") renderMagicList(list);
+      } catch (e) {
+        console.error("renderMagicList failed:", e);
+      }
       keywordModal.style.display = "flex";
     });
-    const kbClose = keywordModal.querySelector(".close-btn");
-    if (kbClose)
-      kbClose.addEventListener(
-        "click",
-        () => (keywordModal.style.display = "none")
-      );
+    // close/back handlers are initialized in initInfoModalHandlers
   }
 
   const puzzleBtn = document.getElementById("puzzle-btn");

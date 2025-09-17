@@ -210,7 +210,7 @@ export const MAP_IMAGES = {
 
 export const allInfo = {
   about_hole: {
-    title: "穴について",
+    title: "穴の情報",
     content:
       "穴に落ちると真下に落ちて死んでしまう。（死亡した場合、直近でそのフロアに到達した位置に戻される）落ちないように注意しよう。",
     unlocked: false,
@@ -222,7 +222,7 @@ export const allInfo = {
     unlocked: false,
   },
   info_img: {
-    title: "謎について",
+    title: "謎の情報",
     // content will be handled as image reference; store image path here
     content: "img/info_img.png",
     unlocked: false,
@@ -237,6 +237,30 @@ export const allInfo = {
     title: "像の情報",
     content:
       "石像には名前がついている。人の力では動かすことができない。石像が移動する際、経路に蛇が居ると轢き殺す。また、石像越しで蛇を見ても石化は起こらない。",
+    unlocked: false,
+  },
+  box_1f: {
+    title: "エレベ",
+    content:
+      "各階に指定された「エレベの呪文」を草の正しい魔法陣の上で唱えることで1つ上の階の同じ場所に移動する。",
+    unlocked: false,
+  },
+  box_3f: {
+    title: "ムーブ",
+    content:
+      "花の魔法陣で「ムーブの呪文」を唱え、呪文を唱えた階と同じ階にある石像の名前と、東西南北いずれかの方角を指定する。指定した方角へ、その名前の石像が5m移動する。同じ石像は1度しか動かせない。また、移動経路に壁がある場合は動かすことができない。移動経路に穴がある場合、像は真下に落下して壊れる。",
+    unlocked: false,
+  },
+  box_cushion: {
+    title: "クッショ",
+    content:
+      "水の正しい魔法陣の上で「クッショの呪文」を唱える。魔法陣から3歩移動する間に穴に落ちた場合、無事に真下に落ちることができる。",
+    unlocked: false,
+  },
+  box_change: {
+    title: "チェンジ",
+    content:
+      "火の正しい魔法陣の上で魔法を1つ指定し、指定した魔法の効果を編集したものを使用することができるようにする。編集できるのは効果の赤い文字であり、「数字を大きくする」「意味を逆にする」の2つの効果のうちどちらか、あるいは両方の効果を与えることができる。ただし、それぞれの呪文を求めるのに使用した謎に含まれる赤い文字にも同様の変化が発生し、チェンジを行った魔法を使う場合は変化後の呪文を唱える必要がある。チェンジの効果は、チェンジを使用した階で永続的に機能する。また、呪文は全て一般的な言葉になり、言葉にならない場合は使用できない。",
     unlocked: false,
   },
 };
@@ -338,6 +362,37 @@ export const allPuzzles = {
         image: "img/nazo/3f_clover.png",
         unlocked: false,
         answers: ["きんこ"],
+      },
+    ],
+  },
+  elevator_4f: {
+    title: "謎|4F",
+    unlocked: false,
+    bottomImages: ["img/1f_answer.png", "img/elev_1_up.png"],
+    pieces: [
+      {
+        id: TILE.PUZZLE_4H,
+        image: "img/nazo/4f_heart.png",
+        unlocked: false,
+        answers: ["ないん"],
+      },
+      {
+        id: TILE.PUZZLE_4D,
+        image: "img/nazo/4f_diamond.png",
+        unlocked: false,
+        answers: ["あきち"],
+      },
+      {
+        id: TILE.PUZZLE_4S,
+        image: "img/nazo/4f_spade.png",
+        unlocked: false,
+        answers: ["あうと"],
+      },
+      {
+        id: TILE.PUZZLE_4C,
+        image: "img/nazo/4f_clover.png",
+        unlocked: false,
+        answers: ["かめら"],
       },
     ],
   },
