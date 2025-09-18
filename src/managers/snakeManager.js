@@ -1,5 +1,11 @@
 import GameObject from "../entities/gameObject.js";
-import { TILE, MAP_WIDTH, MAP_HEIGHT, MAPS } from "../core/constants.js";
+import {
+  TILE,
+  MAP_WIDTH,
+  MAP_HEIGHT,
+  MAPS,
+  SNAKE_DEFS,
+} from "../core/constants.js";
 import * as mapService from "./mapService.js";
 import { loadAssets } from "../core/assets.js";
 import { on, off } from "../core/eventBus.js";
@@ -11,10 +17,15 @@ let _floorListener = null;
 let _assetsLoaded = false;
 
 function makeGameObjectForSnake(snakeDef) {
+  // use red snake image for 'unclock' mode, default otherwise
+  const imgPath =
+    snakeDef && snakeDef.mode === "unclock"
+      ? "img/snake_red.png"
+      : "img/snake.png";
   const g = new GameObject(
     snakeDef.path[snakeDef.index].x,
     snakeDef.path[snakeDef.index].y,
-    "img/snake.png"
+    imgPath
   );
   return g;
 }
@@ -57,7 +68,8 @@ export async function initSnakes(appLayers, { autoFromMap = true } = {}) {
   _appLayers = appLayers;
   if (!_assetsLoaded) {
     try {
-      await loadAssets(["img/snake.png"]);
+      // preload both normal and red snake images
+      await loadAssets(["img/snake.png", "img/snake_red.png"]);
       _assetsLoaded = true;
     } catch (e) {}
   }
@@ -67,6 +79,22 @@ export async function initSnakes(appLayers, { autoFromMap = true } = {}) {
     // iterate through floors defined in MAPS
     const floors = Object.keys(MAPS).map((k) => parseInt(k, 10));
     for (const f of floors) {
+      // If explicit snake definitions exist for this floor, use them and skip map auto-detection
+      try {
+        if (SNAKE_DEFS && SNAKE_DEFS[f] && Array.isArray(SNAKE_DEFS[f])) {
+          for (const def of SNAKE_DEFS[f]) {
+            try {
+              addSnake({
+                floor: f,
+                path: def.path,
+                mode: def.mode || def.type || "loop",
+                startIndex: def.startIndex || 0,
+              });
+            } catch (e) {}
+          }
+          continue; // skip auto-detection for this floor
+        }
+      } catch (e) {}
       // separate point/start sets per tile category to avoid mixing adjacent routes
       const pointsClock = new Set();
       const startsClock = new Set();
@@ -106,7 +134,7 @@ export async function initSnakes(appLayers, { autoFromMap = true } = {}) {
         }
       }
 
-      // helper to process a category
+      // helper to process a category (original behavior): sort connected component by angle
       const processCategory = (pointsSet, startsSet, mode, sortFn) => {
         if (pointsSet.size === 0) return;
         const comps = findConnectedComponents(pointsSet);
@@ -133,21 +161,29 @@ export async function initSnakes(appLayers, { autoFromMap = true } = {}) {
       processCategory(pointsClock, startsClock, "clock", (comp) => {
         const cx = comp.reduce((s, p) => s + p.x, 0) / comp.length;
         const cy = comp.reduce((s, p) => s + p.y, 0) / comp.length;
+        // invert angle to account for grid y-down coordinate system, then normalize
         comp.sort((a, b) => {
-          const aa = Math.atan2(a.y - cy, a.x - cx);
-          const ab = Math.atan2(b.y - cy, b.x - cx);
-          return ab - aa;
+          const aa = -Math.atan2(a.y - cy, a.x - cx);
+          const ab = -Math.atan2(b.y - cy, b.x - cx);
+          const na = (aa + 2 * Math.PI) % (2 * Math.PI);
+          const nb = (ab + 2 * Math.PI) % (2 * Math.PI);
+          // descending => clockwise
+          return nb - na;
         });
       });
 
-      // process unclock: counter-clockwise sort (ascending angle)
+      // process unclock: counter-clockwise expected; sort so that stepping backward yields CCW
       processCategory(pointsUnclock, startsUnclock, "unclock", (comp) => {
         const cx = comp.reduce((s, p) => s + p.x, 0) / comp.length;
         const cy = comp.reduce((s, p) => s + p.y, 0) / comp.length;
+        // invert angle to account for grid y-down coordinate system, then normalize
         comp.sort((a, b) => {
-          const aa = Math.atan2(a.y - cy, a.x - cx);
-          const ab = Math.atan2(b.y - cy, b.x - cx);
-          return aa - ab;
+          const aa = -Math.atan2(a.y - cy, a.x - cx);
+          const ab = -Math.atan2(b.y - cy, b.x - cx);
+          const na = (aa + 2 * Math.PI) % (2 * Math.PI);
+          const nb = (ab + 2 * Math.PI) % (2 * Math.PI);
+          // sort descending (clockwise) so that stepping backward (unclock mode) yields counter-clockwise motion
+          return nb - na;
         });
       });
 

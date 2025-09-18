@@ -48,11 +48,30 @@ export function showInfoDetail(infoKey, titleEl, contentEl) {
   const info = allInfo[infoKey];
   if (!info) return;
   titleEl.textContent = info.title;
-  contentEl.textContent = info.content;
-  if (!contentEl) return;
-
-  // If the info content points to an image (for example info_img),
-  // render the image inside the content element. Otherwise render text.
+  // highlight certain changeable phrases (always red regardless of change state)
+  function highlightContent(raw, key) {
+    if (typeof raw !== "string") return raw || "";
+    let s = raw;
+    // ensure we don't double-wrap by removing existing spans first
+    s = s.replace(/<span class="change-highlight">([\s\S]*?)<\/span>/g, "$1");
+    // highlight '1つ上' and '1つ下' and any '1つ[上下]' (apply for all keys)
+    s = s.replace(/1つ[上下]/g, function (m) {
+      return `<span class="change-highlight">${m}</span>`;
+    });
+    // highlight first occurrence of '同じ' only for move (box_3f)
+    if (key === "box_3f") {
+      s = s.replace(/同じ/, function (m) {
+        return `<span class="change-highlight">${m}</span>`;
+      });
+    }
+    // highlight first occurrence of '<number>歩' for cushion (box_cushion)
+    if (key === "box_cushion") {
+      s = s.replace(/(\d+)歩/, function (m) {
+        return `<span class="change-highlight">${m}</span>`;
+      });
+    }
+    return s;
+  }
   const maybeImg = info.content || "";
   if (
     typeof maybeImg === "string" &&
@@ -66,7 +85,8 @@ export function showInfoDetail(infoKey, titleEl, contentEl) {
     img.style.height = "auto";
     contentEl.appendChild(img);
   } else {
-    contentEl.textContent = info.content || "";
+    // render HTML with highlighted substrings; pass infoKey so elevator doesn't highlight '同じ'
+    contentEl.innerHTML = highlightContent(info.content || "", infoKey);
   }
 
   // Switch modal to page 2 (detail view) if pages exist. This ensures
@@ -164,3 +184,17 @@ export function initInfoModalHandlers() {
       });
   }
 }
+
+// append CSS rule for highlight class when document exists
+try {
+  if (typeof document !== "undefined") {
+    const styleId = "change-highlight-style";
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement("style");
+      style.id = styleId;
+      style.textContent =
+        ".change-highlight { color: red; font-weight: bold; }";
+      document.head.appendChild(style);
+    }
+  }
+} catch (e) {}

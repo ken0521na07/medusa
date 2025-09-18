@@ -748,3 +748,19 @@ button {
   display: block;
   margin: 0 auto;
 }
+
+/* Narrow and center modal/popup submit buttons for consistent, compact appearance */
+.modal-content .ui-button,
+.modal-content .puzzle-submit-btn,
+#move-modal .modal-content button:where(:not(.close-btn)) {
+  padding: 6px 10px;
+  min-width: 120px; /* narrower than before */
+  width: auto;
+  display: inline-flex;
+  justify-content: center;
+  align-self: center; /* center horizontally inside modal's column layout */
+}
+
+.puzzle-popup-form .puzzle-submit-btn {
+  align-self: center;
+}

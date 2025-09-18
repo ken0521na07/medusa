@@ -11,6 +11,11 @@ export const TILE = {
   INFO_SNAKE_G: "info_snake_g",
   INFO_IMG: "info_img",
   INFO_STATUE: "info_statue",
+  INFO_5_1: "info_5_1",
+  INFO_5_2: "info_5_2",
+  INFO_5_3: "info_5_3",
+  INFO_5_4: "info_5_4",
+  INFO_MEDUSA: "info_medusa",
   HOLE: "hole",
   SNAKE: "snake",
   SNAKE_BOUNCE: "snake_bounce",
@@ -23,6 +28,7 @@ export const TILE = {
   BOX_3F: "box_3f",
   BOX_CUSHION: "box_cushion",
   BOX_CHANGE: "box_change",
+  BOX_MEDUSA: "box_medusa",
   PUZZLE_1H: "puzzle_1h",
   PUZZLE_1S: "puzzle_1s",
   PUZZLE_1C: "puzzle_1c",
@@ -36,10 +42,16 @@ export const TILE = {
   PUZZLE_4S: "puzzle_4s",
   PUZZLE_4C: "puzzle_4c",
   PUZZLE_4D: "puzzle_4d",
+  PUZZLE_5: "puzzle_5",
+  PUZZLE_B1: "puzzle_b1",
   STATUE_J: "statue_j",
+  STATUE_F: "statue_f",
+  STATUE_NOMOVE: "statue_nomove",
+  STATUE_M: "statue_m",
   MOVE: "move",
   CHANGE: "change",
   CUSHON: "cushion",
+  MEDUSA: "medusa",
 };
 
 // --- フロア別マップ定義 ---
@@ -188,11 +200,130 @@ const MAP_4F = [
   ],
 ];
 
+// 5F explicit empty map (11x11) — written out to match style of other floors
+const MAP_5F = [
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, "info_5_1", 0, 0, "hole", 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, "info_5_2", 0],
+  [0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1],
+  [0, 1, "puzzle_5", 0, 0, "statue_f", 0, 0, 0, 0, "hole"],
+  [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 1, "change", 0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1],
+  [0, "info_5_3", 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 0, 0, "info_5_4", 0, 0],
+  [0, 1, 0, 0, 0, 0, "snake", 0, 0, 1, "statue_nomove"],
+];
+
+// 6F explicit empty map (11x11)
+const MAP_6F = [
+  [0, "hole", 0, 1, 0, "medusa", 0, 1, 0, "hole", 0],
+  [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+  [0, 0, 0, 1, "snake", "snake", "snake", 1, 0, 0, "box_medusa"],
+  [0, "cushion", 0, 1, 0, 0, 0, 1, 0, 0, 0],
+  [0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0],
+  [1, 0, 1, 1, 0, 0, 0, 1, 1, "statue_m", 1],
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 1, 0, 0, 0, "info_medusa", 0, 0, 0, 1, 0],
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+];
+
+// B1F explicit layout with snake routes as requested. Coordinates: x=0..10, y=0..10
+const MAP_B1F = [
+  // y=0
+  [0, 0, "puzzle_b1", 0, 0, 0, 0, 0, 0, 0, "snake"],
+  // y=1
+  [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+  // y=2
+  [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+  // y=3
+  [0, 0, 0, 0, 0, 0, 1, 0, "snake", 0, 0],
+  // y=4
+  [0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0],
+  // y=5
+  [1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1],
+  // y=6  top edge of unclock rectangle (7..10), start at (8,6)
+  [
+    "snake",
+    0,
+    "snake",
+    "snake",
+    1,
+    1,
+    0,
+    "snake_unclock",
+    "snake_unclock_start",
+    "snake_unclock",
+    "snake_unclock",
+  ],
+  // y=7  left edge x=7 unclock, inner top row of clock at x=8..10 (start at 10,7)
+  [
+    "snake",
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    "snake_unclock",
+    "snake_clock",
+    "snake_clock",
+    "snake_clock_start",
+  ],
+  // y=8  left edge x=7 unclock, inner middle row of clock
+  [
+    "snake",
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    "snake_unclock",
+    "snake_clock",
+    "snake_clock",
+    "snake_clock",
+  ],
+  // y=9  bottom edge: unclock covers x=7..10 but clock has bottom with start at (8,9)
+  [
+    "snake",
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    "snake_unclock",
+    "snake_clock_start",
+    "snake_clock",
+    "snake_clock",
+  ],
+  // y=10
+  [
+    "snake",
+    0,
+    "snake",
+    "snake",
+    1,
+    "snake",
+    "snake",
+    "snake",
+    "snake",
+    "snake",
+    "snake",
+  ],
+];
+
 export const MAPS = {
   1: MAP_1F,
   2: MAP_2F,
   3: MAP_3F,
   4: MAP_4F,
+  5: MAP_5F,
+  6: MAP_6F,
+  0: MAP_B1F,
 };
 
 // 元の状態を保持するコピー（フロア毎）
@@ -206,6 +337,9 @@ export const MAP_IMAGES = {
   2: "img/map/map_2f.jpg",
   3: "img/map/map_3f.jpg",
   4: "img/map/map_4f.jpg",
+  5: "img/map/map_5f.jpg",
+  6: "img/map/map_6f.jpg",
+  0: "img/map/map_b1f.jpg",
 };
 
 export const allInfo = {
@@ -243,25 +377,25 @@ export const allInfo = {
     title: "エレベ",
     content:
       "各階に指定された「エレベの呪文」を草の正しい魔法陣の上で唱えることで1つ上の階の同じ場所に移動する。",
-    unlocked: false,
+    unlocked: true,
   },
   box_3f: {
     title: "ムーブ",
     content:
       "花の魔法陣で「ムーブの呪文」を唱え、呪文を唱えた階と同じ階にある石像の名前と、東西南北いずれかの方角を指定する。指定した方角へ、その名前の石像が5m移動する。同じ石像は1度しか動かせない。また、移動経路に壁がある場合は動かすことができない。移動経路に穴がある場合、像は真下に落下して壊れる。",
-    unlocked: false,
+    unlocked: true,
   },
   box_cushion: {
     title: "クッショ",
     content:
       "水の正しい魔法陣の上で「クッショの呪文」を唱える。魔法陣から3歩移動する間に穴に落ちた場合、無事に真下に落ちることができる。",
-    unlocked: false,
+    unlocked: true,
   },
   box_change: {
     title: "チェンジ",
     content:
       "火の正しい魔法陣の上で魔法を1つ指定し、指定した魔法の効果を編集したものを使用することができるようにする。編集できるのは効果の赤い文字であり、「数字を大きくする」「意味を逆にする」の2つの効果のうちどちらか、あるいは両方の効果を与えることができる。ただし、それぞれの呪文を求めるのに使用した謎に含まれる赤い文字にも同様の変化が発生し、チェンジを行った魔法を使う場合は変化後の呪文を唱える必要がある。チェンジの効果は、チェンジを使用した階で永続的に機能する。また、呪文は全て一般的な言葉になり、言葉にならない場合は使用できない。",
-    unlocked: false,
+    unlocked: true,
   },
 };
 
@@ -398,6 +532,63 @@ export const allPuzzles = {
   },
 };
 
+// Explicit snake route definitions per-floor. When present, snakeManager will
+// use these definitions instead of auto-detecting from map tiles for that floor.
+export const SNAKE_DEFS = {
+  0: [
+    // B1F: outer counter-clockwise loop (starts at 8,6)
+    {
+      mode: "unclock",
+      path: [
+        { x: 8, y: 6 },
+        { x: 9, y: 6 },
+        { x: 10, y: 6 },
+        { x: 10, y: 7 },
+        { x: 10, y: 8 },
+        { x: 10, y: 9 },
+        { x: 9, y: 9 },
+        { x: 8, y: 9 },
+        { x: 7, y: 9 },
+        { x: 7, y: 8 },
+        { x: 7, y: 7 },
+        { x: 7, y: 6 },
+      ],
+      startIndex: 0,
+    },
+    // B1F: inner clockwise loop (snake A) starting at (10,7)
+    {
+      mode: "clock",
+      path: [
+        { x: 10, y: 7 },
+        { x: 10, y: 8 },
+        { x: 10, y: 9 },
+        { x: 9, y: 9 },
+        { x: 8, y: 9 },
+        { x: 8, y: 8 },
+        { x: 8, y: 7 },
+        { x: 9, y: 7 },
+      ],
+      startIndex: 0,
+    },
+    // B1F: inner clockwise loop (snake B) starting at (8,9)
+    {
+      mode: "clock",
+      path: [
+        { x: 10, y: 7 },
+        { x: 10, y: 8 },
+        { x: 10, y: 9 },
+        { x: 9, y: 9 },
+        { x: 8, y: 9 },
+        { x: 8, y: 8 },
+        { x: 8, y: 7 },
+        { x: 9, y: 7 },
+      ],
+      // startIndex points to the element {x:8,y:9} which is at index 4 above
+      startIndex: 4,
+    },
+  ],
+};
+
 export const START_POS_X = 5;
 export const START_POS_Y = 5; // changed from 10 to 5 to start at y=5
-export const START_FLOOR = 4; // start on 1F by default
+export const START_FLOOR = 5; // start on 1F by default
