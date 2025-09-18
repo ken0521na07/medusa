@@ -707,3 +707,44 @@ button {
   padding: 10px;
   box-sizing: border-box;
 }
+
+/* 追加: keyword（魔法）モーダルの2ページ目を情報モーダルと同じレイアウトに揃える */
+#magic-page-2 {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 12px;
+  box-sizing: border-box;
+}
+
+#magic-page-2 .modal-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+#magic-page-2 .modal-header h3,
+#magic-page-2 .modal-header #magic-detail-title {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.2;
+  flex: 1 1 auto;
+}
+
+/* 本文エリアを情報モーダルと同様に見せる */
+#magic-detail {
+  padding: 8px 4px;
+  overflow: auto;
+  max-height: 60vh;
+  box-sizing: border-box;
+  background: transparent;
+}
+
+/* 画像が入る場合の調整 */
+#magic-detail img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
