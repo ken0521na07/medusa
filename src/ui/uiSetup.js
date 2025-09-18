@@ -295,198 +295,6 @@ export async function setupUI() {
     switch (currentTileType) {
       case TILE.PUZZLE_3:
         // 3F の一括解放：1マス調べるだけで4つ全て解放される
-        try {
-          const set = allPuzzles["elevator_3f"];
-          if (set) {
-            set.unlocked = true;
-            for (const p of set.pieces) p.unlocked = true;
-            // remove tile from map
-            mapService.setTile(x, y, 0);
-            // show custom alert instead of opening puzzle modal
-            try {
-              showCustomAlert("謎を入手した");
-            } catch (e) {
-              try {
-                window.alert("謎を入手した");
-              } catch (e) {}
-            }
-          }
-        } catch (e) {
-          console.error("failed to unlock 3F puzzles", e);
-        }
-        break;
-      case TILE.INFO_IMG:
-      case TILE.INFO_HOLE:
-      case TILE.INFO_SNAKE:
-      case TILE.INFO_SNAKE_G:
-      case TILE.INFO_STATUE:
-        try {
-          const key = currentTileType; // matches allInfo keys like 'info_img'
-          if (allInfo && allInfo[key]) allInfo[key].unlocked = true;
-        } catch (e) {}
-        // remove tile so it can't be obtained again
-        mapService.setTile(x, y, 0);
-        try {
-          const infoObj = allInfo && allInfo[currentTileType];
-          const title = (infoObj && infoObj.title) || "情報";
-          showCustomAlert(`${title}を手に入れた`);
-        } catch (e) {}
-        break;
-      case TILE.BOX_1F:
-        {
-          try {
-            if (allInfo && allInfo.box_1f) allInfo.box_1f.unlocked = true;
-          } catch (e) {}
-          mapService.setTile(x, y, 0);
-          try {
-            showCustomAlert("魔法「エレベ」を入手した。冊子4ページを開こう");
-          } catch (e) {}
-        }
-        break;
-      case TILE.BOX_3F:
-        {
-          if (!playerState.gotMoveMagic) {
-            playerState.gotMoveMagic = true;
-            try {
-              if (allInfo && allInfo.box_3f) allInfo.box_3f.unlocked = true;
-            } catch (e) {}
-            mapService.setTile(x, y, 0);
-            try {
-              showCustomAlert(
-                "魔法「ムーブ」を入手した。冊子６ページを開こう。"
-              );
-            } catch (e) {}
-          } else {
-            showCustomAlert("既に魔法「ムーブ」は入手している。");
-          }
-        }
-        break;
-      case TILE.BOX_CUSHION:
-        {
-          try {
-            if (allInfo && allInfo.box_cushion)
-              allInfo.box_cushion.unlocked = true;
-          } catch (e) {}
-          mapService.setTile(x, y, 0);
-          try {
-            showCustomAlert(
-              "魔法「クッショ」を入手した。冊子10ページを開こう。"
-            );
-          } catch (e) {}
-        }
-        break;
-      case TILE.BOX_CHANGE:
-        {
-          try {
-            if (allInfo && allInfo.box_change)
-              allInfo.box_change.unlocked = true;
-          } catch (e) {}
-          mapService.setTile(x, y, 0);
-          try {
-            showCustomAlert(
-              "魔法「チェンジ」を入手した。冊子８ページを開こう。"
-            );
-          } catch (e) {}
-        }
-        break;
-      case TILE.PUZZLE_1H:
-        handleGetPuzzlePiece("elevator_1f", currentTileType, { x, y });
-        showCustomAlert(
-          "ハートの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
-        );
-        break;
-      case TILE.PUZZLE_1D:
-        handleGetPuzzlePiece("elevator_1f", currentTileType, { x, y });
-        showCustomAlert(
-          "ダイヤの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
-        );
-        break;
-      case TILE.PUZZLE_1S:
-        handleGetPuzzlePiece("elevator_1f", currentTileType, { x, y });
-        showCustomAlert(
-          "スペードの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
-        );
-        break;
-      case TILE.PUZZLE_1C:
-        handleGetPuzzlePiece("elevator_1f", currentTileType, { x, y });
-        showCustomAlert(
-          "クローバーの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
-        );
-        break;
-      case TILE.PUZZLE_2H:
-        // ハートの謎
-        handleGetPuzzlePiece(
-          "elevator_2f",
-          currentTileType,
-          { x, y },
-          { suppressAlert: true }
-        );
-        showCustomAlert(
-          "ハートの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
-        );
-        break;
-      case TILE.PUZZLE_2D:
-        // ダイヤの謎
-        handleGetPuzzlePiece(
-          "elevator_2f",
-          currentTileType,
-          { x, y },
-          { suppressAlert: true }
-        );
-        showCustomAlert(
-          "ダイヤの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
-        );
-        break;
-      case TILE.PUZZLE_2S:
-        // スペードの謎
-        handleGetPuzzlePiece(
-          "elevator_2f",
-          currentTileType,
-          { x, y },
-          { suppressAlert: true }
-        );
-        showCustomAlert(
-          "スペードの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
-        );
-        break;
-      case TILE.PUZZLE_2C:
-        // クローバーの謎
-        handleGetPuzzlePiece(
-          "elevator_2f",
-          currentTileType,
-          { x, y },
-          { suppressAlert: true }
-        );
-        showCustomAlert(
-          "クローバーの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
-        );
-        break;
-      case TILE.PUZZLE_4H:
-        handleGetPuzzlePiece("elevator_4f", currentTileType, { x, y });
-        showCustomAlert(
-          "ハートの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
-        );
-        break;
-      case TILE.PUZZLE_4D:
-        handleGetPuzzlePiece("elevator_4f", currentTileType, { x, y });
-        showCustomAlert(
-          "ダイヤの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
-        );
-        break;
-      case TILE.PUZZLE_4S:
-        handleGetPuzzlePiece("elevator_4f", currentTileType, { x, y });
-        showCustomAlert(
-          "スペードの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
-        );
-        break;
-      case TILE.PUZZLE_4C:
-        handleGetPuzzlePiece("elevator_4f", currentTileType, { x, y });
-        showCustomAlert(
-          "クローバーの謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
-        );
-        break;
-      case TILE.PUZZLE_3:
-        // 3F の一括解放：1マス調べるだけで4つ全て解放される
         // proceed to unlock via synchronous access to allPuzzles
         try {
           // perform changes directly on allPuzzles imported at module top
@@ -522,6 +330,43 @@ export async function setupUI() {
           console.error("failed to unlock 3F puzzles", e);
         }
         break;
+
+      // 5F: single-tile unlock (same behavior as 3F)
+      case TILE.PUZZLE_5:
+        try {
+          const set = allPuzzles["elevator_5f"];
+          if (set) {
+            set.unlocked = true;
+            for (const p of set.pieces) p.unlocked = true;
+            mapService.setTile(x, y, 0);
+            // show only the custom alert — do NOT open the puzzle modal automatically
+            showCustomAlert(
+              "謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
+            );
+          }
+        } catch (e) {
+          console.error("failed to unlock 5F puzzles", e);
+        }
+        break;
+
+      // B1F: single-tile unlock (same behavior as 3F)
+      case TILE.PUZZLE_B1:
+        try {
+          const set = allPuzzles["elevator_b1"];
+          if (set) {
+            set.unlocked = true;
+            for (const p of set.pieces) p.unlocked = true;
+            mapService.setTile(x, y, 0);
+            // show only the custom alert — do NOT open the puzzle modal automatically
+            showCustomAlert(
+              "謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
+            );
+          }
+        } catch (e) {
+          console.error("failed to unlock B1 puzzles", e);
+        }
+        break;
+
       default:
         break;
     }

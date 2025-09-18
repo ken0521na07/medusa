@@ -530,6 +530,72 @@ export const allPuzzles = {
       },
     ],
   },
+
+  // 5F puzzle set (unlocked by examining puzzle_5 tile) — follows 3F naming convention
+  elevator_5f: {
+    title: "謎|5F",
+    unlocked: false,
+    bottomImages: ["img/1f_answer.png", "img/elev_1_up.png"],
+    pieces: [
+      {
+        id: "5f_heart",
+        image: "img/nazo/5f_heart.png",
+        unlocked: false,
+        answers: ["ぎんみ"],
+      },
+      {
+        id: "5f_diamond",
+        image: "img/nazo/5f_diamond.png",
+        unlocked: false,
+        answers: ["ぶたい"],
+      },
+      {
+        id: "5f_spade",
+        image: "img/nazo/5f_spade.png",
+        unlocked: false,
+        answers: ["しんぽ"],
+      },
+      {
+        id: "5f_clover",
+        image: "img/nazo/5f_clover.png",
+        unlocked: false,
+        answers: ["どかん"],
+      },
+    ],
+  },
+
+  // B1F puzzle set (unlocked by examining puzzle_b1 tile)
+  elevator_b1: {
+    title: "謎|B1F",
+    unlocked: false,
+    bottomImages: ["img/1f_answer.png", "img/elev_1_up.png"],
+    pieces: [
+      {
+        id: "b1_heart",
+        image: "img/nazo/b1_heart.png",
+        unlocked: false,
+        answers: ["あみめ"],
+      },
+      {
+        id: "b1_diamond",
+        image: "img/nazo/b1_diamond.png",
+        unlocked: false,
+        answers: ["さんか"],
+      },
+      {
+        id: "b1_spade",
+        image: "img/nazo/b1_spade.png",
+        unlocked: false,
+        answers: ["はちく"],
+      },
+      {
+        id: "b1_clover",
+        image: "img/nazo/b1_clover.png",
+        unlocked: false,
+        answers: ["かへん"],
+      },
+    ],
+  },
 };
 
 // Explicit snake route definitions per-floor. When present, snakeManager will
@@ -591,4 +657,4 @@ export const SNAKE_DEFS = {
 
 export const START_POS_X = 5;
 export const START_POS_Y = 5; // changed from 10 to 5 to start at y=5
-export const START_FLOOR = 5; // start on 1F by default
+export const START_FLOOR = 0; // start on 1F by default
