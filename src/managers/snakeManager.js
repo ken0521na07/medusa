@@ -291,6 +291,8 @@ export function stepSnakes({ onlyVisible = true } = {}) {
   for (const s of snakes) {
     if (onlyVisible && !s.addedToLayer) continue;
     if (!s.path || s.path.length === 0) continue;
+    // dead snakes do not move
+    if (s.dead) continue;
     if (s.mode === "bounce") {
       const nextIndex = s.index + s.dir;
       if (nextIndex < 0 || nextIndex >= s.path.length) {
@@ -328,6 +330,8 @@ export function stepSnakes({ onlyVisible = true } = {}) {
 
 export function getSnakeAt(x, y, f) {
   for (const s of snakes) {
+    // ignore dead snakes for collision / sight checks
+    if (s.dead) continue;
     if (!s.path || s.path.length === 0) continue;
     const pos = s.path[s.index];
     if (pos.x === x && pos.y === y && s.floor === f) return true;
@@ -389,4 +393,30 @@ export function resetPositions() {
       } catch (e) {}
     }
   } catch (e) {}
+}
+
+// Mark any snake currently occupying (x,y,floor) as dead. Dead snakes stop moving,
+// show a dead sprite and are ignored for petrification/collision checks. Returns
+// array of killed snake ids or null if none.
+export function killSnakeAt(x, y, floor) {
+  const killed = [];
+  for (const s of snakes) {
+    if (s.floor !== floor) continue;
+    if (s.dead) continue;
+    try {
+      const pos = s.path && s.path[s.index];
+      if (!pos) continue;
+      if (pos.x === x && pos.y === y) {
+        s.dead = true;
+        // change visual to dead sprite but keep GameObject so it remains visible
+        try {
+          if (s.sprite && s.sprite.sprite) {
+            s.sprite.sprite.texture = PIXI.Texture.from("img/snake_dead.png");
+          }
+        } catch (e) {}
+        killed.push(s.id);
+      }
+    } catch (e) {}
+  }
+  return killed.length ? killed : null;
 }

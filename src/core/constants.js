@@ -77,7 +77,7 @@ const MAP_2F = [
   [0, 0, 0, "hole", 0, "info_snake", 0, 0, 0, "snake", 0],
   [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   ["snake", 0, 0, 0, 0, 0, 0, "snake", 0, 1, 0],
-  [0, 0, "hole", 0, 0, 0, "snake", 0, "snake", 0, 0],
+  [0, 0, "hole", 0, 0, 0, "snake", "statue_m", "snake", 0, 0],
   [1, 0, 0, 0, 0, 0, 0, "snake", 0, 0, 0],
   [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
   [0, 0, 0, "snake", 0, "info_img", 0, 0, 0, 0, 0],
@@ -657,4 +657,4 @@ export const SNAKE_DEFS = {
 
 export const START_POS_X = 5;
 export const START_POS_Y = 5; // changed from 10 to 5 to start at y=5
-export const START_FLOOR = 0; // start on 1F by default
+export const START_FLOOR = 2; // start on 1F by default

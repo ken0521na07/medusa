@@ -8,6 +8,7 @@ import {
   showInfoDetail,
   initInfoModalHandlers,
   renderMagicList,
+  renderInfoList, // added to allow refreshing the info list
 } from "../managers/infoManager.js";
 import {
   showCustomAlert,
@@ -291,6 +292,37 @@ export async function setupUI() {
     const x = player.gridX;
     const y = player.gridY;
     const currentTileType = mapService.getTile(x, y);
+
+    // If standing on an info_* tile that exists in allInfo, unlock it (add to info modal list)
+    // and show a custom alert. Do NOT open the info modal automatically.
+    try {
+      if (typeof currentTileType === "string" && allInfo[currentTileType]) {
+        const info = allInfo[currentTileType];
+        // only unlock once
+        if (!info.unlocked) {
+          info.unlocked = true;
+          // remove the tile so it can't be picked up again
+          try {
+            mapService.setTile(x, y, 0);
+          } catch (e) {}
+          // refresh info list UI if present
+          try {
+            const listEl = document.getElementById("info-list");
+            if (listEl && typeof renderInfoList === "function")
+              renderInfoList(listEl);
+          } catch (e) {}
+          // show pickup alert: "(title)を手に入れた"
+          try {
+            showCustomAlert((info.title || "情報") + "を手に入れた");
+          } catch (e) {
+            try {
+              window.alert((info.title || "情報") + "を手に入れた");
+            } catch (e2) {}
+          }
+        }
+        return;
+      }
+    } catch (e) {}
 
     switch (currentTileType) {
       case TILE.PUZZLE_3:
