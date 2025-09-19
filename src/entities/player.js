@@ -120,7 +120,13 @@ export default class Player extends GameObject {
       try {
         if (snakeManager.getSnakeAt(x, y, this.floor)) return true;
       } catch (e) {}
-      if (t === TILE.SNAKE || t === "snake") return true;
+      if (t === TILE.SNAKE || t === "snake") {
+        // only consider the tile lethal if a live snake entity currently occupies it
+        try {
+          if (snakeManager.getSnakeAt(x, y, this.floor)) return true;
+        } catch (e) {}
+        // otherwise treat it as non-lethal and continue scanning past it
+      }
       x += vec[0];
       y += vec[1];
     }
@@ -308,9 +314,8 @@ export default class Player extends GameObject {
         return;
       case TILE.SNAKE:
       case "snake":
-        // Treat snake tiles as impassable (like a wall). If the player is
-        // adjacent and attempts to move toward the snake, turn to face it
-        // and show the same "snake seen" message without falling.
+        // Treat snake tiles as impassable (like a wall). However, only trigger
+        // petrification if a live snake entity actually occupies the target tile.
         this.direction = intendedDirection;
         // show standing frame in new facing
         this.animationFrame = 0;
@@ -320,9 +325,18 @@ export default class Player extends GameObject {
           // small debounce to avoid spamming when player holds the button
           this._suppressUntil = Date.now() + 300;
         } catch (e) {}
-        // Immediately trigger fall behavior (modal + teleport) when the
-        // player looks toward an adjacent snake.
-        this.triggerFall("ヘビを見て石化してしまった...！");
+        try {
+          const live = snakeManager.getSnakeAt(newX, newY, this.floor);
+          if (live) {
+            // only fall if a live snake is present
+            this.triggerFall("ヘビを見て石化してしまった...！");
+          }
+        } catch (e) {
+          // on error, conservatively assume lethal
+          try {
+            this.triggerFall("ヘビを見て石化してしまった...！");
+          } catch (e2) {}
+        }
         return;
       default:
         // normal floor or item: move and animate

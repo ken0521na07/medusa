@@ -137,6 +137,31 @@ function _ensureMagicUI() {
         ? s.normalize("NFKC").toLowerCase()
         : (s || "").toLowerCase()
     );
+
+    // Determine if クッショ has been changed via チェンジ and compute effective steps
+    let effectiveCushionSteps = 3; // default
+    try {
+      const changeCfg =
+        window.__changeState &&
+        window.__changeState.global &&
+        window.__changeState.global["クッショ"];
+      if (
+        changeCfg &&
+        changeCfg.type === "増加" &&
+        typeof changeCfg.amount !== "undefined"
+      ) {
+        // changeCfg.amount in UI is the increment (e.g. +1). Add to default.
+        const add = Number(changeCfg.amount) || 0;
+        effectiveCushionSteps = Math.max(1, 3 + add);
+      }
+    } catch (e) {}
+
+    // If effective steps equals 4, accept the alternative keyword(s) requested via チェンジ
+    if (effectiveCushionSteps === 4) {
+      normalizedCushion.push("exit");
+      normalizedCushion.push("エグジット");
+    }
+
     const isCushionSpell =
       normalizedCushion.includes(rawLower) || rawLower.indexOf("fox") !== -1;
 
@@ -169,16 +194,20 @@ function _ensureMagicUI() {
           "3,2,2": { x: 8, y: 3, f: 0 },
         };
         window.__cushionMap = Object.assign({}, window.__cushionMap, mapping);
-        window.__cushionState = { active: true, remainingSteps: 3 };
+        // set remainingSteps based on effectiveCushionSteps computed earlier
+        window.__cushionState = {
+          active: true,
+          remainingSteps: effectiveCushionSteps,
+        };
 
         try {
           showCustomAlert(
-            "「クッショ」を唱えた。３歩以内の移動であれば、穴に落ちても即死を免れる。"
+            `「クッショ」を唱えた。${effectiveCushionSteps}歩以内の移動であれば、穴に落ちても即死を免れる。`
           );
         } catch (e) {
           try {
             window.alert(
-              "「クッショ」を唱えた。３歩以内の移動であれば、穴に落ちても即死を免れる。"
+              `「クッショ」を唱えた。${effectiveCushionSteps}歩以内の移動であれば、穴に落ちても即死を免れる。`
             );
           } catch (e2) {}
         }

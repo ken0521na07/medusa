@@ -315,16 +315,90 @@ export function handleMoveByDisplayName(displayName, dir) {
       return { ok: false, msg: "その像は北にしか動かせないようだ" };
 
     if (s2) {
-      if (s2.x !== 7 || s2.y !== 5)
+      // validate there is indeed an instance at expected origin
+      if (s2.x !== 7 || s2.y !== 5) {
         return { ok: false, msg: "その像は動かせないようだ" };
+      }
       try {
-        mapService.setTile(s2.x, s2.y, 0, s2.floor);
-        mapService.setTile(3, 2, "statue_m", 2);
-        s2.x = 3;
-        s2.y = 2;
-        s2.obj.gridX = 3;
-        s2.obj.gridY = 2;
-        s2.obj.updatePixelPosition();
+        const oldX2 = s2.x;
+        const oldY2 = s2.y;
+        const targetX2 = 3;
+        const targetY2 = 2;
+        // check whether target is a hole -> falling behavior
+        try {
+          const t2 = mapService.getTile(targetX2, targetY2, s2.floor);
+          if (t2 === TILE.HOLE || t2 === "hole") {
+            // attempt to resolve cushion mapping (similar to generic case)
+            const newFloor2 = Math.max(1, s2.floor - 1);
+            let destX2 = targetX2;
+            let destY2 = targetY2;
+            let destFloor2 = newFloor2;
+            try {
+              const cushionMap = window.__cushionMap || {};
+              const directKeys = [
+                `${targetX2},${targetY2},${s2.floor}`,
+                `${targetX2},${targetY2},${newFloor2}`,
+                `${targetX2},${targetY2},${destFloor2}`,
+              ];
+              let found2 = null;
+              for (const k of directKeys) {
+                if (
+                  cushionMap &&
+                  Object.prototype.hasOwnProperty.call(cushionMap, k)
+                ) {
+                  found2 = cushionMap[k];
+                  break;
+                }
+              }
+              if (!found2) {
+                for (const [k, v] of Object.entries(cushionMap)) {
+                  const parts = (k || "").split(",");
+                  if (parts.length >= 2) {
+                    const kx = parseInt(parts[0], 10);
+                    const ky = parseInt(parts[1], 10);
+                    if (kx === targetX2 && ky === targetY2) {
+                      found2 = v;
+                      break;
+                    }
+                  }
+                }
+              }
+              if (!found2) {
+                // this hole is not mapped -> disallow move
+                return { ok: false, msg: "その像は動かせないようだ" };
+              }
+              destX2 = typeof found2.x === "number" ? found2.x : destX2;
+              destY2 = typeof found2.y === "number" ? found2.y : destY2;
+              destFloor2 = typeof found2.f === "number" ? found2.f : destFloor2;
+            } catch (e) {}
+
+            try {
+              // clear origin tile
+              mapService.setTile(oldX2, oldY2, 0, s2.floor);
+            } catch (e) {}
+
+            // apply shared fall effects so snake kill and alerts occur
+            try {
+              _applyFallenStatueEffects(s2, destX2, destY2, destFloor2);
+            } catch (e) {
+              console.error(
+                "failed applying fallen effects for statue_m (2F)",
+                e
+              );
+            }
+          } else {
+            // normal move onto non-hole target
+            try {
+              mapService.setTile(s2.x, s2.y, 0, s2.floor);
+              mapService.setTile(targetX2, targetY2, "statue_m", 2);
+              s2.x = targetX2;
+              s2.y = targetY2;
+              s2.obj.gridX = targetX2;
+              s2.obj.gridY = targetY2;
+              s2.obj.updatePixelPosition();
+            } catch (e) {}
+          }
+        } catch (e) {}
       } catch (e) {}
     }
 

@@ -16,12 +16,54 @@ let _appLayers = null;
 let _floorListener = null;
 let _assetsLoaded = false;
 
+// Ensure each snake GameObject reflects the current model (x,y,floor)
+function _ensureSpritesMatchMap() {
+  try {
+    for (const s of snakes) {
+      if (!s) continue;
+      try {
+        if (s.sprite) {
+          // keep grid coords in sync with current path/index
+          try {
+            const pos = s.path && s.path[s.index];
+            if (pos && typeof pos.x === "number" && typeof pos.y === "number") {
+              s.sprite.gridX = pos.x;
+              s.sprite.gridY = pos.y;
+              s.sprite.updatePixelPosition();
+            }
+          } catch (e) {}
+          // visibility based on current floor
+          try {
+            s.sprite.sprite.visible = s.floor === mapService.getFloor();
+          } catch (e) {}
+          // ensure sprite is attached to entity layer exactly once
+          try {
+            if (
+              _appLayers &&
+              _appLayers.entityLayer &&
+              s.sprite.sprite &&
+              !s.sprite.sprite.parent
+            ) {
+              _appLayers.entityLayer.addChild(s.sprite.sprite);
+              s.addedToLayer = true;
+            }
+          } catch (e) {}
+        }
+      } catch (e) {}
+    }
+  } catch (e) {}
+}
+
 function makeGameObjectForSnake(snakeDef) {
-  // use red snake image for 'unclock' mode, default otherwise
-  const imgPath =
-    snakeDef && snakeDef.mode === "unclock"
-      ? "img/snake_red.png"
-      : "img/snake.png";
+  // use static image for 'static' mode, red image for 'unclock' mode, default otherwise
+  // Prefer using the normal snake image for static snakes to avoid requiring
+  // an additional file. Use red image for 'unclock' mode, default otherwise.
+  let imgPath = "img/snake.png";
+  if (snakeDef && snakeDef.mode === "static") {
+    imgPath = "img/snake_static.png";
+  } else if (snakeDef && snakeDef.mode === "unclock") {
+    imgPath = "img/snake_red.png";
+  }
   const g = new GameObject(
     snakeDef.path[snakeDef.index].x,
     snakeDef.path[snakeDef.index].y,
@@ -68,8 +110,14 @@ export async function initSnakes(appLayers, { autoFromMap = true } = {}) {
   _appLayers = appLayers;
   if (!_assetsLoaded) {
     try {
-      // preload both normal and red snake images
-      await loadAssets(["img/snake.png", "img/snake_red.png"]);
+      // preload snake images (normal, red, static, dead)
+      // load images we actually ship: normal, red and dead variants
+      await loadAssets([
+        "img/snake.png",
+        "img/snake_red.png",
+        "img/snake_static.png",
+        "img/snake_dead.png",
+      ]);
       _assetsLoaded = true;
     } catch (e) {}
   }
@@ -92,7 +140,32 @@ export async function initSnakes(appLayers, { autoFromMap = true } = {}) {
               });
             } catch (e) {}
           }
-          continue; // skip auto-detection for this floor
+          // Also ensure any plain 'snake' tiles on the map become static snakes.
+          // Previously we used `continue` here which skipped auto-detection entirely
+          // and therefore missed single-tile static snakes defined directly in MAPS
+          // (this caused the B1F plain 'snake' tiles to have no sprite). Scan the
+          // map and add static snakes for those tiles, then continue.
+          try {
+            const w2 = mapService.getWidth();
+            const h2 = mapService.getHeight();
+            for (let yy = 0; yy < h2; yy++) {
+              for (let xx = 0; xx < w2; xx++) {
+                try {
+                  const tt = mapService.getTile(xx, yy, f);
+                  if (tt === TILE.SNAKE || tt === "snake") {
+                    try {
+                      addSnake({
+                        floor: f,
+                        path: [{ x: xx, y: yy }],
+                        mode: "static",
+                      });
+                    } catch (e) {}
+                  }
+                } catch (e) {}
+              }
+            }
+          } catch (e) {}
+          continue; // still skip the full route autodetect after handling defs + static tiles
         }
       } catch (e) {}
       // separate point/start sets per tile category to avoid mixing adjacent routes
@@ -107,6 +180,15 @@ export async function initSnakes(appLayers, { autoFromMap = true } = {}) {
       for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
           const t = mapService.getTile(x, y, f);
+          // plain static snake tile
+          try {
+            if (t === TILE.SNAKE || t === "snake") {
+              // create a static snake object (single-tile)
+              try {
+                addSnake({ floor: f, path: [{ x, y }], mode: "static" });
+              } catch (e) {}
+            }
+          } catch (e) {}
           // bounce
           if (t === TILE.SNAKE_BOUNCE || t === "snake_bounce") {
             pointsBounce.add(x + "," + y);
@@ -194,27 +276,66 @@ export async function initSnakes(appLayers, { autoFromMap = true } = {}) {
     }
   }
 
+  // After auto-detection/additions, ensure static-mode snakes use the static texture
+  // and are properly attached/visible. This is a defensive step to avoid races
+  // where a static snake on certain floors (e.g. B1F / floor 0) may end up
+  // without its expected texture or not re-attached to the entity layer.
+  try {
+    for (const s of snakes) {
+      try {
+        if (!s || !s.sprite || !s.sprite.sprite) continue;
+        if (s.mode === "static") {
+          // explicitly assign the static texture (ensures PIXI resolves it)
+          s.sprite.sprite.texture = PIXI.Texture.from("img/snake_static.png");
+        }
+        // defensive: ensure sprite size/alpha are correct
+        try {
+          s.sprite.sprite.width =
+            typeof PIXI !== "undefined" &&
+            PIXI.settings &&
+            typeof PIXI.settings.SCALE_MODE !== "undefined"
+              ? s.sprite.sprite.width
+              : s.sprite.sprite.width;
+        } catch (e) {}
+        try {
+          s.sprite.sprite.height = s.sprite.sprite.height;
+        } catch (e) {}
+        try {
+          s.sprite.sprite.alpha = 1;
+        } catch (e) {}
+        // ensure it is attached to the entity layer if layers are available
+        try {
+          if (_appLayers && _appLayers.entityLayer && !s.sprite.sprite.parent) {
+            _appLayers.entityLayer.addChild(s.sprite.sprite);
+            s.addedToLayer = true;
+          }
+        } catch (e) {}
+      } catch (e) {}
+    }
+  } catch (e) {}
+
   // ensure we toggle sprite visibility on floor change
   try {
     if (_floorListener) off("floorChanged", _floorListener);
   } catch (e) {}
   _floorListener = (f) => {
     try {
+      // synchronize all snake sprites with the current map/floor
+      _ensureSpritesMatchMap();
+      // additionally, remove sprites that are on other floors (defensive)
       for (const s of snakes) {
-        if (!s.sprite) continue;
-        if (f === s.floor) {
-          if (s.addedToLayer) continue;
-          try {
-            _appLayers.entityLayer.addChild(s.sprite.sprite);
-          } catch (e) {}
-          s.addedToLayer = true;
-        } else {
-          if (!s.addedToLayer) continue;
-          try {
-            _appLayers.entityLayer.removeChild(s.sprite.sprite);
-          } catch (e) {}
-          s.addedToLayer = false;
-        }
+        try {
+          if (!s || !s.sprite || !s.sprite.sprite) continue;
+          if (f !== s.floor) {
+            if (s.addedToLayer && _appLayers && _appLayers.entityLayer) {
+              try {
+                _appLayers.entityLayer.removeChild(s.sprite.sprite);
+              } catch (e) {}
+              s.addedToLayer = false;
+            }
+            s.sprite.sprite.visible = false;
+          }
+        } catch (e) {}
       }
     } catch (e) {}
   };
@@ -236,7 +357,7 @@ export function addSnake({ floor = 3, path = [], mode = "bounce" } = {}) {
     // initialIndex records the spawn/starting index so resets return here
     initialIndex: 0,
     dir: -1, // for bounce: -1 start moving 'up' the array, 1 down; for loop: 1 moves forward
-    mode, // 'bounce' or 'loop' (future extension)
+    mode, // 'bounce' or 'loop' or 'static' (new)
     sprite: null,
     addedToLayer: false,
   };
@@ -257,19 +378,57 @@ export function addSnake({ floor = 3, path = [], mode = "bounce" } = {}) {
   // create GameObject for this snake
   try {
     snakeDef.sprite = makeGameObjectForSnake(snakeDef);
-    // only add to layer if current floor matches
+    // ensure sprite uses the intended texture and dimensions (defensive)
+    try {
+      const imgPath =
+        snakeDef.mode === "static"
+          ? "img/snake_static.png"
+          : snakeDef.mode === "unclock"
+          ? "img/snake_red.png"
+          : "img/snake.png";
+      try {
+        // explicitly set texture to ensure PIXI resolves the cached texture
+        if (snakeDef.sprite && snakeDef.sprite.sprite) {
+          snakeDef.sprite.sprite.texture = PIXI.Texture.from(imgPath);
+          snakeDef.sprite.sprite.width =
+            typeof TILE_SIZE !== "undefined"
+              ? TILE_SIZE
+              : snakeDef.sprite.sprite.width;
+          snakeDef.sprite.sprite.height =
+            typeof TILE_SIZE !== "undefined"
+              ? TILE_SIZE
+              : snakeDef.sprite.sprite.height;
+          snakeDef.sprite.sprite.alpha = 1;
+        }
+      } catch (e) {}
+    } catch (e) {}
+    // add sprite to entity layer if layers are available; set visible according to floor
     try {
       if (
         _appLayers &&
         _appLayers.entityLayer &&
-        mapService.getFloor() === floor
+        snakeDef.sprite &&
+        snakeDef.sprite.sprite
       ) {
-        _appLayers.entityLayer.addChild(snakeDef.sprite.sprite);
+        // avoid adding twice
+        if (!snakeDef.sprite.sprite.parent) {
+          _appLayers.entityLayer.addChild(snakeDef.sprite.sprite);
+        }
+        // ensure visibility matches the floor and the sprite is enabled
+        try {
+          snakeDef.sprite.sprite.visible = mapService.getFloor() === floor;
+        } catch (e) {
+          snakeDef.sprite.sprite.visible = true;
+        }
         snakeDef.addedToLayer = true;
       }
     } catch (e) {}
   } catch (e) {}
   snakes.push(snakeDef);
+  try {
+    // expose for debugging
+    window.__snakes = snakes;
+  } catch (e) {}
   return id;
 }
 
@@ -293,6 +452,8 @@ export function stepSnakes({ onlyVisible = true } = {}) {
     if (!s.path || s.path.length === 0) continue;
     // dead snakes do not move
     if (s.dead) continue;
+    // static snakes never move
+    if (s.mode === "static") continue;
     if (s.mode === "bounce") {
       const nextIndex = s.index + s.dir;
       if (nextIndex < 0 || nextIndex >= s.path.length) {
@@ -333,7 +494,8 @@ export function getSnakeAt(x, y, f) {
     // ignore dead snakes for collision / sight checks
     if (s.dead) continue;
     if (!s.path || s.path.length === 0) continue;
-    const pos = s.path[s.index];
+    const pos = s.path && s.path[s.index];
+    if (!pos) continue;
     if (pos.x === x && pos.y === y && s.floor === f) return true;
     // also check if any other path point equals (x,y) in case sprite hasn't moved yet
     // (not strictly necessary but conservative)
@@ -408,6 +570,15 @@ export function killSnakeAt(x, y, floor) {
       if (!pos) continue;
       if (pos.x === x && pos.y === y) {
         s.dead = true;
+        // For static (map) snakes, clear the underlying map tile so the
+        // dead snake no longer causes petrification via tile checks.
+        try {
+          if (s.mode === "static") {
+            try {
+              mapService.setTile(pos.x, pos.y, 0, s.floor);
+            } catch (e) {}
+          }
+        } catch (e) {}
         // change visual to dead sprite but keep GameObject so it remains visible
         try {
           if (s.sprite && s.sprite.sprite) {
