@@ -284,11 +284,21 @@ export async function setupUI() {
     const frontTile = mapService.getTile(fx, fy, player.floor);
 
     if (typeof frontTile === "string" && frontTile.startsWith("statue_")) {
-      // reveal statue name; for statue_j show ジェシー
-      let msg = "この像の名前は不明だ。";
-      if (frontTile === TILE.STATUE_J || frontTile === "statue_j")
-        msg = "この像の名前はジェシーです。";
-      showCustomAlert(msg);
+      // reveal statue name using STATUE_DISPLAY mapping
+      try {
+        const nameKey = frontTile; // e.g. 'statue_j'
+        const displayName =
+          (typeof STATUE_DISPLAY === "object" && STATUE_DISPLAY[nameKey]) ||
+          null;
+        const msg = displayName
+          ? `この像の名前は${displayName}です。`
+          : "この像の名前は不明だ。";
+        showCustomAlert(msg);
+      } catch (e) {
+        try {
+          showCustomAlert("この像の名前は不明だ。");
+        } catch (e2) {}
+      }
       return;
     }
 
@@ -574,7 +584,7 @@ export async function setupUI() {
       const isShowSpell = normalizedShow.includes(raw);
 
       // MOVE spell handling
-      const moveAccepted = ["fox", "フォックス", "FOX"];
+      const moveAccepted = ["image", "イメージ", "いめーじ"];
       const normalizedMoveAccepted = moveAccepted.map((s) =>
         normalize(s).toLowerCase()
       );
