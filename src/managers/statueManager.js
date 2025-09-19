@@ -1,0 +1,568 @@
+import GameObject from "../entities/gameObject.js";
+import { MAPS, STATUE_DISPLAY, TILE, TILE_SIZE } from "../core/constants.js";
+import * as mapService from "./mapService.js";
+import * as snakeManager from "./snakeManager.js";
+import { showCustomAlert } from "../ui/modals.js";
+import { on, off } from "../core/eventBus.js";
+
+let statues = [];
+let _appLayers = null;
+let _floorListener = null;
+
+function _ensureSpritesMatchMap() {
+  // Ensure each statue GameObject reflects the current model (x,y,floor)
+  try {
+    for (const s of statues) {
+      if (!s) continue;
+      try {
+        if (s.obj) {
+          // keep grid coords in sync
+          s.obj.gridX = typeof s.x === "number" ? s.x : s.obj.gridX;
+          s.obj.gridY = typeof s.y === "number" ? s.y : s.obj.gridY;
+          // update pixel position
+          try {
+            s.obj.updatePixelPosition();
+          } catch (e) {}
+          // visibility based on current floor
+          try {
+            s.obj.sprite.visible = s.floor === mapService.getFloor();
+          } catch (e) {}
+          // ensure sprite is attached to entity layer exactly once
+          try {
+            if (
+              _appLayers &&
+              _appLayers.entityLayer &&
+              s.obj.sprite &&
+              !s.obj.sprite.parent
+            ) {
+              _appLayers.entityLayer.addChild(s.obj.sprite);
+            }
+          } catch (e) {}
+        }
+      } catch (e) {}
+    }
+  } catch (e) {}
+}
+
+export async function init(appLayers) {
+  _appLayers = appLayers;
+  statues = [];
+  try {
+    for (const [floorKey, map] of Object.entries(MAPS)) {
+      const floor = parseInt(floorKey, 10);
+      for (let y = 0; y < map.length; y++) {
+        const row = map[y] || [];
+        for (let x = 0; x < row.length; x++) {
+          const t = row[x];
+          if (typeof t === "string" && t.startsWith("statue_")) {
+            try {
+              const g = new GameObject(x, y, "img/statue.png");
+              g.sprite.visible = floor === mapService.getFloor();
+              if (_appLayers && _appLayers.entityLayer)
+                _appLayers.entityLayer.addChild(g.sprite);
+              statues.push({ x, y, floor, nameKey: t, obj: g });
+            } catch (e) {
+              console.error("statueManager.init: failed to create statue", e);
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error("statueManager.init failed", e);
+  }
+  try {
+    window.__statues = statues;
+  } catch (e) {}
+
+  // reconcile sprites with current map state (positions/visibility)
+  try {
+    _ensureSpritesMatchMap();
+  } catch (e) {}
+
+  // register floor change listener to keep sprites in sync when player teleports
+  try {
+    if (_floorListener) off("floorChanged", _floorListener);
+  } catch (e) {}
+  _floorListener = (f) => {
+    try {
+      _ensureSpritesMatchMap();
+    } catch (e) {}
+  };
+  try {
+    on("floorChanged", _floorListener);
+    // immediately sync with current floor
+    try {
+      _floorListener(mapService.getFloor());
+    } catch (e) {}
+  } catch (e) {}
+
+  // do not call _ensureSpritesMatchMap here; sprites are created from MAPS
+
+  // Ensure default cushion mapping is always available (so ムーブ can use it
+  // even if クッショ hasn't been cast). Existing entries on window.__cushionMap
+  // are preserved and take precedence.
+  try {
+    const defaultCushion = {
+      "1,0,6": { x: 0, y: 9, f: 5 },
+      "9,0,6": { x: 0, y: 1, f: 5 },
+      "5,1,5": { x: 9, y: 5, f: 3 },
+      "10,4,5": { x: 4, y: 10, f: 4 },
+      "7,0,4": { x: 7, y: 0, f: 3 },
+      "6,10,4": { x: 6, y: 10, f: 3 },
+      "9,5,4": { x: 9, y: 5, f: 3 },
+      "3,2,2": { x: 8, y: 3, f: 0 },
+    };
+    window.__cushionMap = Object.assign(
+      {},
+      defaultCushion,
+      window.__cushionMap || {}
+    );
+  } catch (e) {}
+
+  return statues;
+}
+
+// Ensure the runtime map tiles and statue objects are in sync.
+// (implementation is defined above; duplicate empty definition removed)
+
+export function getStatues() {
+  return statues;
+}
+
+export function syncVisibility(floor) {
+  try {
+    // reconcile in case runtime map changed (moves/falls)
+    _ensureSpritesMatchMap();
+  } catch (e) {}
+  for (const s of statues) {
+    try {
+      if (s && s.obj) s.obj.sprite.visible = s.floor === floor;
+    } catch (e) {}
+  }
+}
+
+// shared helper to apply effects when a statue falls (texture swap, player death, snake kill, alerts)
+function _applyFallenStatueEffects(st, destX, destY, destFloor) {
+  try {
+    // If another statue already occupies the destination, remove its sprite/object
+    try {
+      const existing = statues.find(
+        (s) =>
+          s &&
+          s !== st &&
+          s.x === destX &&
+          s.y === destY &&
+          s.floor === destFloor
+      );
+      if (existing) {
+        try {
+          if (existing.obj && existing.obj.sprite) {
+            // remove from display list if attached
+            if (
+              existing.obj.sprite.parent &&
+              typeof existing.obj.sprite.parent.removeChild === "function"
+            ) {
+              existing.obj.sprite.parent.removeChild(existing.obj.sprite);
+            }
+            try {
+              existing.obj.sprite.visible = false;
+            } catch (e) {}
+          }
+        } catch (e) {}
+        try {
+          existing.removed = true;
+          existing.obj = null;
+        } catch (e) {}
+      }
+    } catch (e) {}
+
+    // place statue on destination tile
+    try {
+      mapService.setTile(destX, destY, st.nameKey, destFloor);
+    } catch (e) {}
+
+    // update statue model and sprite
+    st.x = destX;
+    st.y = destY;
+    st.floor = destFloor;
+    try {
+      st.obj.gridX = destX;
+      st.obj.gridY = destY;
+      st.obj.sprite.visible = st.floor === mapService.getFloor();
+      try {
+        const brokenTex = PIXI.Texture.from("img/statue_broken.png");
+        if (brokenTex) {
+          st.obj.sprite.texture = brokenTex;
+          try {
+            st.obj.sprite.width =
+              typeof TILE_SIZE === "number" ? TILE_SIZE : st.obj.sprite.width;
+            st.obj.sprite.height =
+              typeof TILE_SIZE === "number" ? TILE_SIZE : st.obj.sprite.height;
+          } catch (e) {}
+        }
+      } catch (e) {
+        console.error("failed to set broken statue texture", e);
+      }
+      st.obj.updatePixelPosition();
+    } catch (e) {
+      console.error("failed to update statue object after fall", e);
+    }
+
+    // mark as moved/broken
+    try {
+      st.moved = true;
+      st.obj.broken = true;
+    } catch (e) {}
+
+    try {
+      console.log("[statue] fell", {
+        nameKey: st.nameKey,
+        destX,
+        destY,
+        destFloor,
+      });
+    } catch (e) {}
+
+    // player death check
+    try {
+      if (window && window.__playerInstance) {
+        const p = window.__playerInstance;
+        if (p.gridX === destX && p.gridY === destY && p.floor === destFloor) {
+          if (typeof requestAnimationFrame === "function") {
+            requestAnimationFrame(() => {
+              try {
+                p.triggerFall("像の落下で轢かれてしまった...");
+              } catch (err) {
+                console.error("triggerFall failed on player", err);
+              }
+            });
+          } else {
+            p.triggerFall("像の落下で轢かれてしまった...");
+          }
+        }
+      }
+    } catch (e) {
+      console.error("player death check failed", e);
+    }
+
+    // kill snakes at destination and notify
+    try {
+      const killed = snakeManager.killSnakeAt(destX, destY, destFloor);
+      if (killed && killed.length)
+        try {
+          showCustomAlert("像の落下で蛇が倒された。");
+        } catch (e) {}
+    } catch (e) {
+      console.error("killSnakeAt failed", e);
+    }
+
+    try {
+      showCustomAlert("像が穴に落ちて下の階に落下した。");
+    } catch (e) {}
+  } catch (e) {
+    console.error("_applyFallenStatueEffects failed", e);
+  }
+}
+
+function _getDisplayNameKeyByName(name) {
+  const n = (name || "").normalize
+    ? (name || "").normalize("NFKC").trim()
+    : (name || "").trim();
+  for (const k of Object.keys(STATUE_DISPLAY || {})) {
+    try {
+      const v = STATUE_DISPLAY[k] || "";
+      const vn = v.normalize ? v.normalize("NFKC").trim() : String(v).trim();
+      if (vn === n) return k;
+      if (k === n) return k; // allow passing the internal key
+    } catch (e) {
+      if (STATUE_DISPLAY[k] === name) return k;
+    }
+  }
+  return null;
+}
+
+export function handleMoveByDisplayName(displayName, dir) {
+  const nameKey = _getDisplayNameKeyByName(displayName);
+  if (!nameKey) return { ok: false, msg: "その像は見つからないようだ" };
+  const targets = statues.filter((st) => st.nameKey === nameKey);
+  if (!targets || targets.length === 0)
+    return { ok: false, msg: "その像は見つからないようだ" };
+
+  const getVecForFloor = (d, floor) => {
+    if (floor === 5) {
+      if (d === "北") return [-1, 0];
+      if (d === "東") return [0, -1];
+      if (d === "南") return [1, 0];
+      if (d === "西") return [0, 1];
+    } else {
+      if (d === "北") return [0, -1];
+      if (d === "東") return [1, 0];
+      if (d === "南") return [0, 1];
+      if (d === "西") return [-1, 0];
+    }
+    return null;
+  };
+
+  const handleStatueM = () => {
+    const s2 = statues.find(
+      (st) => st.nameKey === "statue_m" && st.floor === 2
+    );
+    const s6 = statues.find(
+      (st) => st.nameKey === "statue_m" && st.floor === 6
+    );
+    if (dir !== "北")
+      return { ok: false, msg: "その像は北にしか動かせないようだ" };
+
+    if (s2) {
+      if (s2.x !== 7 || s2.y !== 5)
+        return { ok: false, msg: "その像は動かせないようだ" };
+      try {
+        mapService.setTile(s2.x, s2.y, 0, s2.floor);
+        mapService.setTile(3, 2, "statue_m", 2);
+        s2.x = 3;
+        s2.y = 2;
+        s2.obj.gridX = 3;
+        s2.obj.gridY = 2;
+        s2.obj.updatePixelPosition();
+      } catch (e) {}
+    }
+
+    if (s6) {
+      const vec6 = getVecForFloor("北", 6);
+      const oldX6 = s6.x;
+      const oldY6 = s6.y;
+      const w = mapService.getWidth();
+      const h = mapService.getHeight();
+      let blocked6 = false;
+      let fell6 = false;
+      let targetX6 = oldX6;
+      let targetY6 = oldY6;
+      for (let step = 1; step <= 5; step++) {
+        const nx = oldX6 + vec6[0] * step;
+        const ny = oldY6 + vec6[1] * step;
+        if (nx < 0 || nx >= w || ny < 0 || ny >= h) {
+          blocked6 = true;
+          break;
+        }
+        const t = mapService.getTile(nx, ny, 6);
+        if (t === TILE.WALL || t === 1) {
+          blocked6 = true;
+          break;
+        }
+        if (t === TILE.HOLE || t === "hole") {
+          targetX6 = nx;
+          targetY6 = ny;
+          fell6 = true;
+          break;
+        }
+        if (step === 5) {
+          targetX6 = nx;
+          targetY6 = ny;
+        }
+      }
+      if (!blocked6) {
+        if (fell6) {
+          // determine destination using cushion mapping - only allow falls into mapped holes
+          const newFloor6 = Math.max(1, 6 - 1);
+          let destX6 = targetX6;
+          let destY6 = targetY6;
+          let destFloor6 = newFloor6;
+          try {
+            const cushionMap = window.__cushionMap || {};
+            const directKeys = [
+              `${targetX6},${targetY6},${6}`,
+              `${targetX6},${targetY6},${newFloor6}`,
+              `${targetX6},${targetY6},${destFloor6}`,
+            ];
+            let found6 = null;
+            for (const k of directKeys) {
+              if (
+                cushionMap &&
+                Object.prototype.hasOwnProperty.call(cushionMap, k)
+              ) {
+                found6 = cushionMap[k];
+                break;
+              }
+            }
+            if (!found6) {
+              for (const [k, v] of Object.entries(cushionMap)) {
+                const parts = (k || "").split(",");
+                if (parts.length >= 2) {
+                  const kx = parseInt(parts[0], 10);
+                  const ky = parseInt(parts[1], 10);
+                  if (kx === targetX6 && ky === targetY6) {
+                    found6 = v;
+                    break;
+                  }
+                }
+              }
+            }
+            if (!found6) {
+              // this hole is not one of the known cushion-mapped holes -> disallow fall
+              return { ok: false, msg: "その像は動かせないようだ" };
+            }
+            destX6 = typeof found6.x === "number" ? found6.x : destX6;
+            destY6 = typeof found6.y === "number" ? found6.y : destY6;
+            destFloor6 = typeof found6.f === "number" ? found6.f : destFloor6;
+          } catch (e) {}
+
+          try {
+            mapService.setTile(oldX6, oldY6, 0, 6);
+          } catch (e) {}
+
+          // use shared effect helper so statue_m behaves identically to other statues
+          try {
+            _applyFallenStatueEffects(s6, destX6, destY6, destFloor6);
+          } catch (e) {
+            console.error("failed applying fallen effects for statue_m", e);
+          }
+        } else {
+          try {
+            mapService.setTile(oldX6, oldY6, 0, 6);
+            mapService.setTile(targetX6, targetY6, "statue_m", 6);
+            s6.x = targetX6;
+            s6.y = targetY6;
+            s6.obj.gridX = targetX6;
+            s6.obj.gridY = targetY6;
+            s6.obj.updatePixelPosition();
+          } catch (e) {}
+        }
+      }
+    }
+    return { ok: true };
+  };
+
+  const handleGeneric = (st) => {
+    if (st.moved) return { ok: false, msg: "その像はもう動かせないようだ" };
+    const vec = getVecForFloor(dir, st.floor);
+    if (!vec) return { ok: false, msg: "入力が正しくないようだ" };
+    const oldX = st.x;
+    const oldY = st.y;
+    const floor = st.floor;
+    const w = mapService.getWidth();
+    const h = mapService.getHeight();
+    let blocked = false;
+    let fell = false;
+    let targetX = oldX;
+    let targetY = oldY;
+    for (let step = 1; step <= 5; step++) {
+      const nx = oldX + vec[0] * step;
+      const ny = oldY + vec[1] * step;
+      if (nx < 0 || nx >= w || ny < 0 || ny >= h) {
+        blocked = true;
+        break;
+      }
+      const t = mapService.getTile(nx, ny, floor);
+      if (t === TILE.WALL || t === 1) {
+        blocked = true;
+        break;
+      }
+      if (t === TILE.HOLE || t === "hole") {
+        targetX = nx;
+        targetY = ny;
+        fell = true;
+        break;
+      }
+      if (step === 5) {
+        targetX = nx;
+        targetY = ny;
+      }
+    }
+    if (blocked) return { ok: false, msg: "入力が正しくないようだ" };
+
+    if (fell) {
+      const newFloor = Math.max(1, floor - 1);
+      try {
+        mapService.setTile(oldX, oldY, 0, floor);
+      } catch (e) {}
+      let destX = targetX;
+      let destY = targetY;
+      let destFloor = newFloor;
+      try {
+        const cushionMap = window.__cushionMap || {};
+        const directKeys = [
+          `${targetX},${targetY},${floor}`,
+          `${targetX},${targetY},${newFloor}`,
+          `${targetX},${targetY},${destFloor}`,
+        ];
+        let found = null;
+        for (const k of directKeys) {
+          if (
+            cushionMap &&
+            Object.prototype.hasOwnProperty.call(cushionMap, k)
+          ) {
+            found = cushionMap[k];
+            break;
+          }
+        }
+        if (!found) {
+          for (const [k, v] of Object.entries(cushionMap)) {
+            const parts = (k || "").split(",");
+            if (parts.length >= 2) {
+              const kx = parseInt(parts[0], 10);
+              const ky = parseInt(parts[1], 10);
+              if (kx === targetX && ky === targetY) {
+                found = v;
+                break;
+              }
+            }
+          }
+        }
+        if (!found) {
+          // this hole is not a known cushion-mapped hole: disallow fall
+          return { ok: false, msg: "その像は動かせないようだ" };
+        }
+        destX = typeof found.x === "number" ? found.x : destX;
+        destY = typeof found.y === "number" ? found.y : destY;
+        destFloor = typeof found.f === "number" ? found.f : destFloor;
+      } catch (e) {}
+
+      // shared fall handling
+      _applyFallenStatueEffects(st, destX, destY, destFloor);
+
+      return { ok: true };
+    }
+
+    try {
+      mapService.setTile(oldX, oldY, 0, floor);
+      mapService.setTile(targetX, targetY, st.nameKey, floor);
+    } catch (e) {}
+    st.x = targetX;
+    st.y = targetY;
+    try {
+      st.obj.gridX = targetX;
+      st.obj.gridY = targetY;
+      st.obj.updatePixelPosition();
+    } catch (e) {}
+    try {
+      st.moved = true;
+    } catch (e) {}
+    return { ok: true };
+  };
+
+  let movedOK = true;
+  if (nameKey === "statue_m") {
+    const res = handleStatueM();
+    movedOK = res && res.ok !== false;
+    if (res && res.ok === false) return res;
+  } else {
+    for (const st of targets) {
+      const res = handleGeneric(st);
+      if (!res || res.ok === false) {
+        movedOK = false;
+        return res;
+      }
+    }
+  }
+
+  return { ok: true };
+}
+
+export function reset() {
+  statues = [];
+  try {
+    if (_floorListener) off("floorChanged", _floorListener);
+  } catch (e) {}
+  _appLayers = null;
+}

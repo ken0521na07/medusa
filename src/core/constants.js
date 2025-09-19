@@ -62,7 +62,7 @@ const MAP_1F = [
   /*y=2*/ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   /*y=3*/ [0, 0, 0, 0, 0, 0, 0, 0, "hole", 0, 0],
   /*y=4*/ [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, "hole"],
-  /*y=5*/ [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+  /*y=5*/ [0, 0, 0, 1, "elev", 0, 0, 1, 0, 0, 0],
   /*y=6*/ ["puzzle_1c", 0, "puzzle_1d", 1, 0, 0, 0, 1, 0, 0, 0],
   /*y=7*/ [0, 0, 0, 1, 1, 1, 1, 1, 0, "hole", 0],
   /*y=8*/ [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
@@ -77,7 +77,7 @@ const MAP_2F = [
   [0, 0, 0, "hole", 0, "info_snake", 0, 0, 0, "snake", 0],
   [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   ["snake", 0, 0, 0, 0, 0, 0, "snake", 0, 1, 0],
-  [0, 0, "hole", 0, 0, 0, "snake", "statue_m", "snake", 0, 0],
+  [0, 0, "hole", 0, 0, "elev", "snake", "statue_m", "snake", 0, 0],
   [1, 0, 0, 0, 0, 0, 0, "snake", 0, 0, 0],
   [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
   [0, 0, 0, "snake", 0, "info_img", 0, 0, 0, 0, 0],
@@ -92,7 +92,7 @@ const MAP_3F = [
   ["snake", 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
   [1, 0, 0, "puzzle_3", 1, "info_snake_g", 0, "snake_bounce", 1, "box_3f", 0],
   ["snake", 0, 0, 1, 1, 0, 0, "snake_bounce", 1, 0, 0],
-  ["snake", "statue_j", 0, 0, 0, 0, 1, "snake_bounce", 1, "move", 0],
+  ["snake", "statue_j", 0, 0, 0, "elev", 1, "snake_bounce", 1, "move", 0],
   ["snake", 0, 0, 0, 1, 0, 0, "snake_bounce", 1, 0, 0],
   ["snake", 0, 0, 0, 1, "info_statue", 0, "snake_bounce_start", 1, 0, 0],
   ["snake", 0, 0, 0, 1, 0, 0, "snake_bounce", 1, 0, "snake_bounce"],
@@ -138,7 +138,7 @@ const MAP_4F = [
     "snake_clock",
     "snake_clock",
     0,
-    0,
+    "elev",
     "snake_clock",
     1,
     "snake_clock",
@@ -207,7 +207,7 @@ const MAP_5F = [
   [0, 0, 0, 0, 0, 0, 0, 0, 0, "info_5_2", 0],
   [0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1],
   [0, 1, "puzzle_5", 0, 0, "statue_f", 0, 0, 0, 0, "hole"],
-  [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 1, 0, 0, 0, "elev", 0, 0, 0, 0, 0],
   [0, 1, "change", 0, 0, 0, 0, 0, 0, 0, 0],
   [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1],
   [0, "info_5_3", 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -243,7 +243,7 @@ const MAP_B1F = [
   // y=4
   [0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0],
   // y=5
-  [1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1],
+  [1, 0, 1, 1, 1, "elev", 1, 1, 0, 1, 1],
   // y=6  top edge of unclock rectangle (7..10), start at (8,6)
   [
     "snake",
@@ -702,4 +702,4 @@ export const STATUE_SYNC = {
 
 export const START_POS_X = 5;
 export const START_POS_Y = 5; // changed from 10 to 5 to start at y=5
-export const START_FLOOR = 3; // start on 1F by default
+export const START_FLOOR = 5; // start on 1F by default

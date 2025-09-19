@@ -24,6 +24,7 @@ import {
   STATUE_DISPLAY,
   STATUE_BY_FLOOR,
   STATUE_SYNC,
+  TILE_SIZE,
 } from "../core/constants.js";
 // import { startTimer as startTimerCore } from "./timer.js";
 import Player from "../entities/player.js";
@@ -35,6 +36,8 @@ import { on, emit } from "../core/eventBus.js";
 import * as snakeManager from "../managers/snakeManager.js";
 import GameObject from "../entities/gameObject.js";
 import { MAPS } from "../core/constants.js";
+import * as statueManager from "../managers/statueManager.js";
+import magicManager from "../managers/magicManager.js";
 
 export async function setupUI() {
   const app = initEngine();
@@ -47,6 +50,8 @@ export async function setupUI() {
     mapService.getMapImage(),
     "img/character.png",
     "img/statue.png",
+    // preload broken statue texture so setting it later is instant
+    "img/statue_broken.png",
   ]);
   // create map sprite from explicit start floor image to avoid race with later events
   const mapSprite = PIXI.Sprite.from(mapService.getMapImage(START_FLOOR));
@@ -89,42 +94,19 @@ export async function setupUI() {
   // player.prepareTextures and sprite updated in Player.move/teleport already
   window.__playerInstance = player;
 
-  // initialize statue sprites from MAPS (statue_* tiles)
-  const statues = [];
-  function initStatues() {
+  try {
+    // delegate statue initialization to the manager which also exposes window.__statues
+    await statueManager.init(app._layers);
     try {
-      for (const [floorKey, map] of Object.entries(MAPS)) {
-        const floor = parseInt(floorKey, 10);
-        for (let y = 0; y < map.length; y++) {
-          const row = map[y] || [];
-          for (let x = 0; x < row.length; x++) {
-            const t = row[x];
-            if (typeof t === "string" && t.startsWith("statue_")) {
-              const nameKey = t; // e.g. 'statue_j'
-              // create a simple GameObject sprite for the statue
-              try {
-                const g = new GameObject(x, y, "img/statue.png");
-                g.sprite.visible = floor === mapService.getFloor();
-                app._layers.entityLayer.addChild(g.sprite);
-                statues.push({ x, y, floor, nameKey, obj: g });
-              } catch (e) {
-                console.error("initStatues: failed to create statue sprite", e);
-              }
-            }
-          }
-        }
-      }
+      window.__statueManager = statueManager;
     } catch (e) {}
+    // ensure visibility sync runs now that statues exist
+    try {
+      emit("floorChanged", mapService.getFloor());
+    } catch (e) {}
+  } catch (e) {
+    console.error("statueManager.init failed", e);
   }
-  initStatues();
-  // expose statues globally so external helpers/modals can access them
-  try {
-    window.__statues = statues;
-  } catch (e) {}
-  // ensure visibility sync runs now that statues exist
-  try {
-    emit("floorChanged", mapService.getFloor());
-  } catch (e) {}
 
   // listen for player moves to step the snake and then evaluate sight
   on("playerMoved", (payload) => {
@@ -525,294 +507,11 @@ export async function setupUI() {
     });
 
   // 魔法入力欄のロジック
-  const magicInput = document.getElementById("magic-input-text");
-  const magicSubmit = document.getElementById("magic-input-submit");
-  if (magicSubmit && magicInput) {
-    const accepted = ["ぱいきじ", "パイ生地", "パイキジ", "ぱい 生地"];
-
-    const normalize = (s) => (s || "").replace(/\s+/g, "").trim();
-
-    const checkMagic = () => {
-      const raw = normalize(magicInput.value);
-      const player = window.__playerInstance;
-      const x = player ? player.gridX : null;
-      const y = player ? player.gridY : null;
-      const floor = player ? player.floor : null;
-
-      // helper to compute elevator target floor based on change state
-      const computeElevatorTarget = (currentFloor, defaultDelta = 1) => {
-        try {
-          if (!window.__changeState || !window.__changeState.elevatorPerFloor) {
-            return currentFloor + defaultDelta;
-          }
-          const cfg = window.__changeState.elevatorPerFloor[currentFloor];
-          if (!cfg) return currentFloor + defaultDelta;
-          if (cfg.type === "増加") {
-            const amt = Number(cfg.floors || cfg.amount || defaultDelta);
-            const dir = cfg.direction || "上";
-            return currentFloor + (dir === "上" ? amt : -amt);
-          }
-          if (cfg.type === "反転") {
-            // meaning inversion: flip the default delta if user chose the default direction
-            // cfg.direction indicates which original direction is considered 'flipped'
-            const dir = cfg.direction || "上";
-            // if original intent is 'up' (defaultDelta positive) and user flipped '上', make negative
-            if (dir === "上") return currentFloor - Math.abs(defaultDelta);
-            // if flipped '下', invert to positive
-            return currentFloor + Math.abs(defaultDelta);
-          }
-        } catch (e) {}
-        return currentFloor + defaultDelta;
-      };
-
-      // debug info
-      console.log(
-        "[magic] input=",
-        magicInput.value,
-        "normalized=",
-        raw,
-        "player=",
-        x,
-        y,
-        "floor=",
-        floor
-      );
-
-      // Special spell: えいぞう -> teleport from 2F (5,5) to 3F (5,5)
-      const showAccepted = ["えいぞう", "映像", "エイゾウ"];
-      const normalizedShow = showAccepted.map((s) => normalize(s));
-      const isShowSpell = normalizedShow.includes(raw);
-
-      // MOVE spell handling
-      const moveAccepted = ["image", "イメージ", "いめーじ"];
-      const normalizedMoveAccepted = moveAccepted.map((s) =>
-        normalize(s).toLowerCase()
-      );
-      const isMoveSpell = normalizedMoveAccepted.includes(
-        (raw || "").toLowerCase()
-      );
-      if (isMoveSpell) {
-        // The move spell (fox) may only be used on 3F at (9,5).
-        if (floor === 3 && x === 9 && y === 5) {
-          if (!(allInfo && allInfo.box_3f && allInfo.box_3f.unlocked)) {
-            const msg = "正しい魔法陣の上で唱えよう";
-            console.log(allInfo);
-            console.log(allInfo.box_3f);
-            console.log(allInfo.box_3f.unlocked);
-            try {
-              showCustomAlert(msg);
-            } catch (e) {
-              try {
-                window.alert(msg);
-              } catch (e2) {}
-            }
-            return;
-          }
-          // correct word and correct place -> open move modal
-          openMoveModal();
-          return;
-        }
-        // correct word but wrong place
-        const msg = "正しい魔法陣の上で唱えよう";
-        console.log(
-          "[magic] correct-spell-wrong-place for fox: player=",
-          x,
-          y,
-          "floor=",
-          floor
-        );
-        try {
-          showCustomAlert(msg);
-        } catch (e) {
-          try {
-            window.alert(msg);
-          } catch (e2) {}
-        }
-        return;
-      }
-
-      if (isShowSpell) {
-        if (floor === 2 && x === 5 && y === 5) {
-          try {
-            teleportPlayer(5, 5, 3);
-            showCustomAlert(
-              "「えいぞう」を唱え、3Fに移動した。封筒Bを開こう。"
-            );
-          } catch (e) {
-            try {
-              window.alert("魔法が唱えられた！正解です。");
-            } catch (e2) {}
-          }
-        } else {
-          const msg = "正しい魔法陣の上で唱えよう";
-          console.log(
-            "[magic] correct-spell-wrong-place for えいぞう: player=",
-            x,
-            y,
-            "floor=",
-            floor
-          );
-          try {
-            showCustomAlert(msg);
-          } catch (e) {
-            try {
-              window.alert(msg);
-            } catch (e2) {}
-          }
-        }
-        return;
-      }
-
-      // elevator spell handling (エレベ系)
-      // existing accepted words (エレべ)
-      const normalizedAccepted = accepted.map((a) => normalize(a));
-      const isElevatorSpell = normalizedAccepted.includes(raw);
-
-      // New: 3F->4F spell words
-      const up4Accepted = ["たいせき", "体積", "タイセキ"];
-      const normalizedUp4 = up4Accepted.map((s) => normalize(s));
-      const isUp4Spell = normalizedUp4.includes(raw);
-
-      // 新: チェンジ魔法の検出
-      const changeAccepted = ["チェンジ", "ちぇんじ"];
-      const normalizedChange = changeAccepted.map((s) => normalize(s));
-      const isChangeSpell = normalizedChange.includes(raw);
-      if (isChangeSpell) {
-        try {
-          openChangeModal();
-        } catch (e) {}
-        return;
-      }
-
-      if (isElevatorSpell) {
-        // only allow 1F -> 2F when standing on magic tile (5,5) on 1F
-        if (floor === 1 && x === 5 && y === 5) {
-          try {
-            const target = computeElevatorTarget(floor, 1);
-            if (target < 1 || target > 4) throw new Error("invalid target");
-            teleportPlayer(5, 5, target);
-            showCustomAlert(
-              `「エレべ」を唱え、${floor}Fから${target}Fに移動した。封筒Aを開こう`
-            );
-          } catch (e) {
-            try {
-              window.alert("魔法が唱えられた！正解です。");
-            } catch (e2) {}
-          }
-        } else {
-          const msg = "正しい魔法陣の上で唱えよう";
-          console.log(
-            "[magic] correct-spell-wrong-place for エレべ: player=",
-            x,
-            y,
-            "floor=",
-            floor
-          );
-          try {
-            showCustomAlert(msg);
-          } catch (e) {
-            try {
-              window.alert(msg);
-            } catch (e2) {}
-          }
-        }
-      } else if (isUp4Spell) {
-        // allow 3F -> 4F when standing on magic tile (5,5) on 3F
-        if (floor === 3 && x === 5 && y === 5) {
-          try {
-            const target = computeElevatorTarget(floor, 1);
-            if (target < 1 || target > 4) throw new Error("invalid target");
-            teleportPlayer(5, 5, target);
-            showCustomAlert(
-              `「エレべ」を唱え、${floor}Fから${target}Fに移動した。封筒Cを開こう`
-            );
-          } catch (e) {
-            try {
-              window.alert("魔法が唱えられた！正解です。");
-            } catch (e2) {}
-          }
-        } else {
-          const msg = "正しい魔法陣の上で唱えよう";
-          console.log(
-            "[magic] correct-spell-wrong-place for エレべ(3->4): player=",
-            x,
-            y,
-            "floor=",
-            floor
-          );
-          try {
-            showCustomAlert(msg);
-          } catch (e) {
-            try {
-              window.alert(msg);
-            } catch (e2) {}
-          }
-        }
-      } else {
-        // 入力自体が間違っている場合
-        const msg = "呪文が間違っているようだ";
-        console.log("[magic] wrong-spell:", raw);
-        try {
-          showCustomAlert(msg);
-        } catch (e) {
-          try {
-            window.alert(msg);
-          } catch (e2) {}
-        }
-      }
-    };
-
-    // IME 対応: composition 中は Enter を送信しない、compositionend 直後の Enter を無視
-    let _isComposing = false;
-    let _ignoreNextEnter = false;
-    magicInput.addEventListener("compositionstart", () => {
-      _isComposing = true;
-    });
-    magicInput.addEventListener("compositionend", () => {
-      _isComposing = false;
-      _ignoreNextEnter = true;
-      setTimeout(() => {
-        _ignoreNextEnter = false;
-      }, 100);
-    });
-
-    magicSubmit.addEventListener("click", checkMagic);
-    magicInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        console.log(
-          "[magic] keydown Enter, isComposing=",
-          _isComposing,
-          "e.isComposing=",
-          e.isComposing,
-          "_ignoreNextEnter=",
-          _ignoreNextEnter
-        );
-        if (_isComposing || _ignoreNextEnter || e.isComposing) return;
-        e.preventDefault();
-        checkMagic();
-      }
-    });
-    // keyup fallback for environments where keydown may be swallowed by IME
-    magicInput.addEventListener("keyup", (e) => {
-      if (e.key === "Enter") {
-        console.log(
-          "[magic] keyup Enter, isComposing=",
-          _isComposing,
-          "e.isComposing=",
-          e.isComposing,
-          "_ignoreNextEnter=",
-          _ignoreNextEnter
-        );
-        if (_isComposing || _ignoreNextEnter || e.isComposing) return;
-        checkMagic();
-      }
-    });
-    // After clicking submit, clear the input for convenience
-    magicSubmit.addEventListener("click", () => {
-      try {
-        magicInput.value = "";
-      } catch (e) {}
-    });
+  // initialize magic handlers via manager
+  try {
+    magicManager.init();
+  } catch (e) {
+    console.error("magicManager.init failed", e);
   }
 
   const infoClose = document.getElementById("info-close-btn");
@@ -1069,6 +768,13 @@ function openMoveModal() {
 
       // generic handler for non-synced statues (or synced ones from non-special floors)
       const handleGeneric = (st) => {
+        // prevent moving the same statue twice
+        if (st.moved) {
+          modal.style.display = "none";
+          showCustomAlert("その像はもう動かせないようだ");
+          return false;
+        }
+
         const vec = getVecForFloor(dir, st.floor);
         if (!vec) {
           modal.style.display = "none";
@@ -1127,22 +833,157 @@ function openMoveModal() {
           try {
             mapService.setTile(oldX, oldY, 0, floor);
           } catch (e) {}
-          // place statue on lower floor at same x,y
+
+          // determine destination using cushion mapping if present
+          let destX = targetX;
+          let destY = targetY;
+          let destFloor = newFloor;
           try {
-            mapService.setTile(targetX, targetY, st.nameKey, newFloor);
+            const cushionMap = window.__cushionMap || {};
+            // Prefer direct key matches but also fall back to scanning entries
+            const directKeys = [
+              `${targetX},${targetY},${floor}`,
+              `${targetX},${targetY},${newFloor}`,
+              `${targetX},${targetY},${destFloor}`,
+            ];
+            let found = null;
+            for (const k of directKeys) {
+              if (
+                cushionMap &&
+                Object.prototype.hasOwnProperty.call(cushionMap, k)
+              ) {
+                found = cushionMap[k];
+                break;
+              }
+            }
+            if (!found) {
+              // fallback: scan all cushionMap entries and match by coordinates
+              for (const [k, v] of Object.entries(cushionMap)) {
+                const parts = (k || "").split(",");
+                if (parts.length >= 2) {
+                  const kx = parseInt(parts[0], 10);
+                  const ky = parseInt(parts[1], 10);
+                  if (kx === targetX && ky === targetY) {
+                    found = v;
+                    break;
+                  }
+                }
+              }
+            }
+            if (found) {
+              destX = typeof found.x === "number" ? found.x : destX;
+              destY = typeof found.y === "number" ? found.y : destY;
+              destFloor = typeof found.f === "number" ? found.f : destFloor;
+            }
           } catch (e) {}
-          // update statue record
-          st.x = targetX;
-          st.y = targetY;
-          st.floor = newFloor;
+
+          // place statue on destination floor
           try {
-            st.obj.gridX = targetX;
-            st.obj.gridY = targetY;
-            // sprite visibility may need toggling depending on current viewed floor
+            mapService.setTile(destX, destY, st.nameKey, destFloor);
+          } catch (e) {}
+
+          // update statue record and visuals
+          st.x = destX;
+          st.y = destY;
+          st.floor = destFloor;
+          try {
+            st.obj.gridX = destX;
+            st.obj.gridY = destY;
+            // ensure sprite is visible for the current viewed floor
             st.obj.sprite.visible = st.floor === mapService.getFloor();
+            // change to broken statue image and ensure texture is applied
+            try {
+              const brokenTex = PIXI.Texture.from("img/statue_broken.png");
+              if (brokenTex) {
+                st.obj.sprite.texture = brokenTex;
+                // preserve/ensure correct size
+                try {
+                  st.obj.sprite.width =
+                    typeof TILE_SIZE === "number"
+                      ? TILE_SIZE
+                      : st.obj.sprite.width;
+                  st.obj.sprite.height =
+                    typeof TILE_SIZE === "number"
+                      ? TILE_SIZE
+                      : st.obj.sprite.height;
+                } catch (e) {}
+              }
+            } catch (e) {
+              console.error("failed to set broken statue texture", e);
+            }
+            // force update position
             st.obj.updatePixelPosition();
+          } catch (e) {
+            console.error("failed to update statue object after fall", e);
+          }
+
+          // mark statue as moved so it cannot be moved again
+          try {
+            st.moved = true;
+            st.obj.broken = true;
           } catch (e) {}
-          showCustomAlert("像が穴に落ちて下の階に落下した。");
+
+          // Debug logging
+          try {
+            console.log("[statue] fell", {
+              nameKey: st.nameKey,
+              destX,
+              destY,
+              destFloor,
+            });
+          } catch (e) {}
+
+          // If player is at the destination, they die
+          try {
+            if (window && window.__playerInstance) {
+              const p = window.__playerInstance;
+              if (
+                p.gridX === destX &&
+                p.gridY === destY &&
+                p.floor === destFloor
+              ) {
+                console.log(
+                  "[statue] player hit by falling statue -> triggerFall"
+                );
+                try {
+                  // Ensure the broken sprite and position are rendered before showing the death alert
+                  if (typeof requestAnimationFrame === "function") {
+                    requestAnimationFrame(() => {
+                      try {
+                        p.triggerFall("像の落下で轢かれてしまった...");
+                      } catch (err) {
+                        console.error("triggerFall failed on player", err);
+                      }
+                    });
+                  } else {
+                    p.triggerFall("像の落下で轢かれてしまった...");
+                  }
+                } catch (e) {
+                  try {
+                    p.triggerFall("像の落下で轢かれてしまった...");
+                  } catch (e2) {}
+                }
+              }
+            }
+          } catch (e) {
+            console.error("player death check failed", e);
+          }
+
+          // If any snake occupies the destination, kill it
+          try {
+            const killed = snakeManager.killSnakeAt(destX, destY, destFloor);
+            if (killed && killed.length) {
+              try {
+                showCustomAlert("像の落下で蛇が倒された。");
+              } catch (e) {}
+            }
+          } catch (e) {
+            console.error("killSnakeAt failed", e);
+          }
+
+          try {
+            showCustomAlert("像が穴に落ちて下の階に落下した。");
+          } catch (e) {}
           return true;
         }
 
@@ -1157,6 +998,11 @@ function openMoveModal() {
           st.obj.gridX = targetX;
           st.obj.gridY = targetY;
           st.obj.updatePixelPosition();
+        } catch (e) {}
+
+        // mark statue as moved for normal moves as well
+        try {
+          st.moved = true;
         } catch (e) {}
 
         return true;

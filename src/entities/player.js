@@ -261,6 +261,48 @@ export default class Player extends GameObject {
         try {
           this._suppressUntil = Date.now() + 1000;
         } catch (e) {}
+
+        // Check for active cushion effect saved globally
+        try {
+          const cushionState = window.__cushionState || null;
+          const cushionMap = window.__cushionMap || null;
+          const key = `${this.gridX},${this.gridY},${this.floor}`;
+          if (
+            cushionState &&
+            cushionState.active &&
+            typeof cushionState.remainingSteps === "number" &&
+            cushionState.remainingSteps > 0 &&
+            cushionMap &&
+            cushionMap[key]
+          ) {
+            // teleport to mapped destination instead of immediate death
+            const dest = cushionMap[key];
+            try {
+              this.teleport(dest.x, dest.y, dest.f);
+            } catch (e) {}
+            // consume one step
+            try {
+              window.__cushionState.remainingSteps = Math.max(
+                0,
+                (window.__cushionState.remainingSteps || 0) - 1
+              );
+              // if steps exhausted, deactivate
+              if (window.__cushionState.remainingSteps <= 0) {
+                window.__cushionState.active = false;
+              }
+            } catch (e) {}
+            // notify player
+            try {
+              showCustomAlert("クッショ効果で穴を回避した！");
+            } catch (e) {
+              try {
+                window.alert("クッショ効果で穴を回避した！");
+              } catch (e2) {}
+            }
+            return;
+          }
+        } catch (e) {}
+
         // unified fall behavior
         this.triggerFall("穴に落ちてしまった");
         return;
@@ -301,6 +343,17 @@ export default class Player extends GameObject {
             y: this.gridY,
             floor: this.floor,
           });
+        } catch (e) {}
+
+        // If a cushion effect is active, consume one step on each successful move.
+        // This ensures the effect only protects for the next N actual steps,
+        // and will not linger indefinitely if the player doesn't fall into a hole.
+        try {
+          const cs = window.__cushionState;
+          if (cs && cs.active && typeof cs.remainingSteps === "number") {
+            cs.remainingSteps = Math.max(0, cs.remainingSteps - 1);
+            if (cs.remainingSteps <= 0) cs.active = false;
+          }
         } catch (e) {}
 
         return;
