@@ -62,7 +62,7 @@ const MAP_1F = [
   /*y=2*/ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   /*y=3*/ [0, 0, 0, 0, 0, 0, 0, 0, "hole", 0, 0],
   /*y=4*/ [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, "hole"],
-  /*y=5*/ [0, 0, 0, 1, "elev", 0, 0, 1, 0, 0, 0],
+  /*y=5*/ [0, 0, 0, 1, 0, "elev", 0, 1, 0, 0, 0],
   /*y=6*/ ["puzzle_1c", 0, "puzzle_1d", 1, 0, 0, 0, 1, 0, 0, 0],
   /*y=7*/ [0, 0, 0, 1, 1, 1, 1, 1, 0, "hole", 0],
   /*y=8*/ [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
@@ -701,5 +701,5 @@ export const STATUE_SYNC = {
 };
 
 export const START_POS_X = 5;
-export const START_POS_Y = 9; // changed from 10 to 5 to start at y=5
-export const START_FLOOR = 4; // start on 1F by default
+export const START_POS_Y = 10; // changed from 10 to 5 to start at y=5
+export const START_FLOOR = 1; // start on 1F by default

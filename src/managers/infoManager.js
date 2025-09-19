@@ -54,22 +54,78 @@ export function showInfoDetail(infoKey, titleEl, contentEl) {
     let s = raw;
     // ensure we don't double-wrap by removing existing spans first
     s = s.replace(/<span class="change-highlight">([\s\S]*?)<\/span>/g, "$1");
-    // highlight '1つ上' and '1つ下' and any '1つ[上下]' (apply for all keys)
-    s = s.replace(/1つ[上下]/g, function (m) {
-      return `<span class="change-highlight">${m}</span>`;
-    });
-    // highlight first occurrence of '同じ' only for move (box_3f)
-    if (key === "box_3f") {
-      s = s.replace(/同じ/, function (m) {
-        return `<span class="change-highlight">${m}</span>`;
-      });
+
+    try {
+      if (key === "box_1f") {
+        // highlight phrases like '1つ上' / '2つ下' (require 'つ' token to avoid matching '魔法陣の上')
+        s = s.replace(/([一二三四五六七八九十]+|\d+)つ[上下]/g, function (m) {
+          return `<span class="change-highlight">${m}</span>`;
+        });
+      } else if (key === "box_cushion") {
+        // highlight numeric part of '3歩' (or any number + 歩)
+        s = s.replace(/(\d+)歩/g, function (m, n) {
+          return `<span class="change-highlight">${n}</span>歩`;
+        });
+      } else if (key === "box_3f") {
+        // Ensure the displayed token matches current チェンジの状況 for ムーブ (per-floor preferred)
+        try {
+          const player =
+            typeof window !== "undefined" && window.__playerInstance
+              ? window.__playerInstance
+              : null;
+          const floor = player ? player.floor : null;
+          const perFloorMove =
+            typeof window !== "undefined" &&
+            window.__changeStateByFloor &&
+            floor != null
+              ? window.__changeStateByFloor[floor] &&
+                window.__changeStateByFloor[floor]["ムーブ"]
+              : null;
+          const globalMove =
+            typeof window !== "undefined" &&
+            window.__changeState &&
+            window.__changeState.global
+              ? window.__changeState.global["ムーブ"] ||
+                window.__changeState.global["move"]
+              : null;
+          const moveCfg = perFloorMove || globalMove;
+          const moveIsInverted = (() => {
+            const c = moveCfg;
+            if (!c) return false;
+            if (c.type === "反転") return true;
+            if (c.invert === true || c.reversed === true || c.revert === true)
+              return true;
+            if (c.dir === "下" || c.direction === "下") return true;
+            return false;
+          })();
+
+          if (moveIsInverted) {
+            // show '違う' instead of '同じ'
+            // perform a safe swap in case content already contains '違う'
+            s = s.replace(/同じ/g, "__TMP_SAME__");
+            s = s.replace(/違う/g, "同じ");
+            s = s.replace(/__TMP_SAME__/g, "違う");
+          } else {
+            // ensure '同じ' is shown (swap back if needed)
+            s = s.replace(/違う/g, "__TMP_DIFF__");
+            s = s.replace(/同じ/g, "違う");
+            s = s.replace(/__TMP_DIFF__/g, "同じ");
+            // The above ensures that if content was previously modified to '違う', it is restored to '同じ'.
+          }
+        } catch (e) {
+          // ignore errors and fall back to existing highlighting behavior
+        }
+        // highlight '同じ' or '違う' depending on current content after swap
+        if (/違う/.test(s)) {
+          s = s.replace(/違う/, `<span class="change-highlight">違う</span>`);
+        } else {
+          s = s.replace(/同じ/, `<span class="change-highlight">同じ</span>`);
+        }
+      }
+    } catch (e) {
+      // ignore highlight errors
     }
-    // highlight first occurrence of '<number>歩' for cushion (box_cushion)
-    if (key === "box_cushion") {
-      s = s.replace(/(\d+)歩/, function (m) {
-        return `<span class="change-highlight">${m}</span>`;
-      });
-    }
+
     return s;
   }
   const maybeImg = info.content || "";

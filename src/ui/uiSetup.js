@@ -645,61 +645,56 @@ export async function setupUI() {
 
             // チェンジ内容があれば反映
             if (cfg) {
-              // numeric increase
-              if (cfg.type === "増加") {
-                const base =
-                  window.__originalAllInfo && window.__originalAllInfo[key]
-                    ? window.__originalAllInfo[key].content
-                    : (allInfo[key] && allInfo[key].content) || "";
-                const num = cfg.floors || cfg.amount || cfg.amount || 1;
-                if (label === "エレベ") {
-                  const dir = cfg.direction || "上";
-                  if (typeof base === "string") {
-                    if (/1つ[上下]/.test(base)) {
-                      allInfo[key].content = base.replace(
-                        /1つ[上下]/g,
-                        `${num}つ${dir}`
-                      );
-                    } else {
-                      allInfo[key].content = base.replace(
-                        /唱えることで[\s\S]*?移動する。/,
-                        `唱えることで${num}つ${dir}の階の同じ場所に移動する。`
-                      );
-                    }
-                  }
-                } else if (label === "クッショ") {
-                  if (typeof base === "string") {
+              // unified handling: treat cfg.inc (numeric increment) and cfg.dir as source of truth
+              const base =
+                window.__originalAllInfo && window.__originalAllInfo[key]
+                  ? window.__originalAllInfo[key].content
+                  : (allInfo[key] && allInfo[key].content) || "";
+              // derive increment and direction from various possible shapes
+              let inc = 0;
+              let displayNum = null;
+              // prefer explicit inc
+              if (typeof cfg.inc === "number") {
+                inc = cfg.inc;
+              } else if (typeof cfg.amount === "number") {
+                inc = cfg.amount;
+              }
+              // if floors is provided, use it directly as display number
+              if (typeof cfg.floors === "number") {
+                displayNum = Number(cfg.floors);
+              }
+              // determine direction
+              let dir = "上";
+              if (cfg.dir) dir = cfg.dir;
+              else if (cfg.direction) dir = cfg.direction;
+              else if (cfg.type === "反転") dir = "下"; // legacy pure inversion
+
+              // compute final display number if not explicitly provided
+              if (displayNum === null) displayNum = 1 + (Number(inc) || 0);
+
+              // apply to labels
+              if (label === "エレベ") {
+                if (typeof base === "string") {
+                  if (/1つ[上下]/.test(base)) {
                     allInfo[key].content = base.replace(
-                      /(\d+)歩/,
-                      (m, p1) => `${Number(p1) + num}歩`
+                      /1つ[上下]/g,
+                      `${displayNum}つ${dir}`
+                    );
+                  } else {
+                    allInfo[key].content = base.replace(
+                      /唱えることで[\s\S]*?移動する。/,
+                      `唱えることで${displayNum}つ${dir}の階の同じ場所に移動する。`
                     );
                   }
                 }
-              } else if (cfg.type === "反転") {
-                const base =
-                  window.__originalAllInfo && window.__originalAllInfo[key]
-                    ? window.__originalAllInfo[key].content
-                    : (allInfo[key] && allInfo[key].content) || "";
-                if (label === "エレベ") {
-                  if (typeof base === "string") {
-                    if (/1つ上/.test(base)) {
-                      allInfo[key].content = base.replace(/1つ上/, "1つ下");
-                    } else if (/1つ下/.test(base)) {
-                      allInfo[key].content = base.replace(/1つ下/, "1つ上");
-                    } else {
-                      allInfo[key].content = base.replace(
-                        /(唱えることで[\s\S]*?)(上|下)([\sS]*?移動する。)/,
-                        (m, p1, p2, p3) => {
-                          const f = p2 === "上" ? "下" : "上";
-                          return `${p1}${f}${p3}`;
-                        }
-                      );
-                    }
-                  }
-                } else if (label === "ムーブ") {
-                  if (typeof base === "string") {
-                    allInfo[key].content = base.replace(/同じ/, "違う");
-                  }
+              } else if (label === "クッショ") {
+                if (typeof base === "string") {
+                  // for cushion, treat numeric increase as amount to add
+                  const add = Number(cfg.amount || cfg.inc || 0);
+                  allInfo[key].content = base.replace(
+                    /(\d+)歩/,
+                    (m, p1) => `${Number(p1) + add}歩`
+                  );
                 }
               }
             }
@@ -715,6 +710,13 @@ export async function setupUI() {
       } catch (e) {
         console.error("renderMagicList failed:", e);
       }
+      // Ensure magic modal always opens to page 1 (reset any previous page state)
+      try {
+        const magicPage1 = document.getElementById("magic-page-1");
+        const magicPage2 = document.getElementById("magic-page-2");
+        if (magicPage1) magicPage1.style.display = "block";
+        if (magicPage2) magicPage2.style.display = "none";
+      } catch (e) {}
       keywordModal.style.display = "flex";
     });
     // close/back handlers are initialized in initInfoModalHandlers

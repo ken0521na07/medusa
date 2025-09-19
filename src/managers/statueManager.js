@@ -60,7 +60,19 @@ export async function init(appLayers) {
               g.sprite.visible = floor === mapService.getFloor();
               if (_appLayers && _appLayers.entityLayer)
                 _appLayers.entityLayer.addChild(g.sprite);
-              statues.push({ x, y, floor, nameKey: t, obj: g });
+              // record initial position so we can reset on player death by crush
+              statues.push({
+                x,
+                y,
+                floor,
+                nameKey: t,
+                obj: g,
+                initialX: x,
+                initialY: y,
+                initialFloor: floor,
+                // remember original texture path for reset
+                originalTexturePath: "img/statue.png",
+              });
             } catch (e) {
               console.error("statueManager.init: failed to create statue", e);
             }
@@ -229,16 +241,66 @@ function _applyFallenStatueEffects(st, destX, destY, destFloor) {
       if (window && window.__playerInstance) {
         const p = window.__playerInstance;
         if (p.gridX === destX && p.gridY === destY && p.floor === destFloor) {
+          // If player is crushed by this falling statue, reset the moved statue
+          // only after the death alert is closed. Build a callback to perform the reset.
+          const resetMovedStatue = () => {
+            try {
+              if (st && typeof st.initialX === "number") {
+                try {
+                  // clear the destination tile (the broken statue shouldn't remain)
+                  mapService.setTile(destX, destY, 0, destFloor);
+                } catch (e) {}
+                try {
+                  // restore statue at its initial position/floor
+                  mapService.setTile(
+                    st.initialX,
+                    st.initialY,
+                    st.nameKey,
+                    st.initialFloor
+                  );
+                } catch (e) {}
+                try {
+                  st.x = st.initialX;
+                  st.y = st.initialY;
+                  st.floor = st.initialFloor;
+                  if (st.obj) {
+                    st.obj.gridX = st.initialX;
+                    st.obj.gridY = st.initialY;
+                    try {
+                      const origTex = PIXI.Texture.from(
+                        st.originalTexturePath || "img/statue.png"
+                      );
+                      if (origTex) st.obj.sprite.texture = origTex;
+                    } catch (e) {}
+                    try {
+                      st.obj.sprite.visible = st.floor === mapService.getFloor();
+                      st.obj.updatePixelPosition();
+                    } catch (e) {}
+                  }
+                  st.moved = false;
+                  if (st.obj) st.obj.broken = false;
+                  st.removed = false;
+                  try {
+                    console.log("[statue] reset after crushing death (onClose)", {
+                      nameKey: st.nameKey,
+                      to: { x: st.x, y: st.y, floor: st.floor },
+                    });
+                  } catch (e) {}
+                } catch (e) {}
+              }
+            } catch (e) {}
+          };
+
           if (typeof requestAnimationFrame === "function") {
             requestAnimationFrame(() => {
               try {
-                p.triggerFall("像の落下で轢かれてしまった...");
+                p.triggerFall("像の落下で轢かれてしまった...", { onClose: resetMovedStatue });
               } catch (err) {
                 console.error("triggerFall failed on player", err);
               }
             });
           } else {
-            p.triggerFall("像の落下で轢かれてしまった...");
+            p.triggerFall("像の落下で轢かれてしまった...", { onClose: resetMovedStatue });
           }
         }
       }
@@ -288,6 +350,51 @@ export function handleMoveByDisplayName(displayName, dir) {
   const targets = statues.filter((st) => st.nameKey === nameKey);
   if (!targets || targets.length === 0)
     return { ok: false, msg: "その像は見つからないようだ" };
+
+  // Enforce ムーブ option from チェンジ (同じ/違う) if present. This only
+  // affects which statues may be specified by the player. For the special
+  // statue_m case we validate availability but keep the existing behavior of
+  // moving the linked 6F statue when the 2F one is targeted.
+  try {
+    const moveCfg =
+      window.__changeState && window.__changeState.global
+        ? window.__changeState.global.move
+        : null;
+    const playerFloor =
+      window && window.__playerInstance ? window.__playerInstance.floor : null;
+    if (moveCfg && moveCfg.opt) {
+      const opt = moveCfg.opt; // '同じ' or '違う'
+      if (nameKey === "statue_m") {
+        // For マイク, require at least one instance matching the opt
+        const hasSame = targets.some((t) => t.floor === playerFloor);
+        const hasDiff = targets.some((t) => t.floor !== playerFloor);
+        if (opt === "同じ" && !hasSame) {
+          return { ok: false, msg: "その像は動かせないようだ" };
+        }
+        if (opt === "違う" && !hasDiff) {
+          return { ok: false, msg: "その像は動かせないようだ" };
+        }
+        // keep existing behavior (handleStatueM will operate on both s2 and s6 as before)
+      } else {
+        // For generic statues, limit the actual targets moved to those that
+        // match the opt; if none remain, disallow.
+        let filtered = targets;
+        if (opt === "同じ")
+          filtered = targets.filter((t) => t.floor === playerFloor);
+        else if (opt === "違う")
+          filtered = targets.filter((t) => t.floor !== playerFloor);
+        if (!filtered || filtered.length === 0) {
+          return { ok: false, msg: "その像は動かせないようだ" };
+        }
+        // replace targets array contents for the rest of the function by mutating
+        // the local 'targets' variable reference. (we'll shadow it below by reassigning)
+        // eslint-disable-next-line no-param-reassign
+        // Note: we cannot reassign the const targets, so create a new var for processing
+        // the loop below will use 'effectiveTargets'.
+        var effectiveTargets = filtered;
+      }
+    }
+  } catch (e) {}
 
   const getVecForFloor = (d, floor) => {
     if (floor === 5) {
@@ -621,7 +728,10 @@ export function handleMoveByDisplayName(displayName, dir) {
     movedOK = res && res.ok !== false;
     if (res && res.ok === false) return res;
   } else {
-    for (const st of targets) {
+    // use effectiveTargets if defined by チェンジ filtering, otherwise use original targets
+    const listToProcess =
+      typeof effectiveTargets !== "undefined" ? effectiveTargets : targets;
+    for (const st of listToProcess) {
       const res = handleGeneric(st);
       if (!res || res.ok === false) {
         movedOK = false;

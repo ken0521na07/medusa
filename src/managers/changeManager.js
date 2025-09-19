@@ -1,3 +1,7 @@
+import { allInfo } from "../core/constants.js";
+import { renderMagicList, showInfoDetail } from "./infoManager.js";
+import { showCustomAlert } from "../ui/modals.js";
+
 // changeManager: moves the チェンジ modal and logic out of uiSetup
 // Note: this module reuses global objects (allInfo, showCustomAlert, renderMagicList, showInfoDetail, etc.)
 // to keep parity with previous implementation in uiSetup.js. It exposes openChangeModal().
@@ -164,11 +168,16 @@ export function openChangeModal() {
         moveLabel.style.display = "none";
         moveSelect.style.display = "none";
       } else if (target === "ムーブ") {
-        // Move only needs effect selection; no extra fields shown here
+        // ムーブでは意味反転を切り替えるため、現在のフロア状態に応じて
+        // 同じ/違う を表示・選択できるようにする。
         dirLabel.style.display = "none";
         dirSelect.style.display = "none";
         t3.style.display = "none";
         select3.style.display = "none";
+
+        // ムーブの同じ/違う選択はモーダルでユーザーが直接選ぶものではない。
+        // 意味反転は「意味反転」効果を適用した際に既存の状態を反転する仕様のため
+        // モーダル側では選択肢を表示しない。
         moveLabel.style.display = "none";
         moveSelect.style.display = "none";
       } else if (target === "クッショ") {
@@ -198,6 +207,21 @@ export function openChangeModal() {
     select1.addEventListener("change", updateFieldVisibility);
     select2.addEventListener("change", updateFieldVisibility);
 
+    // initialize visibility/state based on current player floor and change state
+    try {
+      const player = window.__playerInstance;
+      const floor = player ? player.floor : null;
+      console.log("[change] opening change modal", {
+        floor: floor,
+        changeState: window.__changeState,
+        changeStateByFloor: window.__changeStateByFloor,
+      });
+    } catch (e) {}
+    // apply initial field visibility so the modal reflects current state
+    try {
+      updateFieldVisibility();
+    } catch (e) {}
+
     close.addEventListener("click", () => {
       modal.style.display = "none";
     });
@@ -215,10 +239,18 @@ export function openChangeModal() {
       // validation helper
       const invalid = () => {
         try {
+          const keywordModal = document.getElementById("keyword-modal");
+          if (keywordModal) keywordModal.style.display = "none";
+        } catch (e) {}
+        try {
+          // also close the change modal we're currently showing
+          if (modal) modal.style.display = "none";
+        } catch (e) {}
+        try {
           showCustomAlert("今はそれをする必要はない");
         } catch (e) {
           try {
-            window.alert("今はそれをする必要はない");
+            showCustomAlert("今はそれをする必要はない");
           } catch (e2) {}
         }
       };
@@ -230,11 +262,12 @@ export function openChangeModal() {
           ムーブ: { 意味反転: true },
         },
         4: {
-          エレベ: { 数字増加: [2] },
+          エレベ: { 数字増加: [1] },
           クッショ: { 数字増加: [1] },
         },
         5: {
-          エレベ: { 意味反転: true, 数字増加: [2] },
+          // allow +1 on 5F to match elevator rules
+          エレベ: { 意味反転: true, 数字増加: [1] },
         },
       };
 
@@ -274,123 +307,202 @@ export function openChangeModal() {
 
         if (effect === "数字増加") {
           const num = Number(amount || 1);
-          // persist per-floor
-          window.__changeState.elevatorPerFloor[floor] = {
-            type: "増加",
-            floors: num,
-            // direction selection intentionally not exposed in modal; default to 上
-            direction: direction || "上",
-          };
-        } else if (effect === "意味反転") {
-          // Toggle meaning inversion per-floor
-          const existing = window.__changeState.elevatorPerFloor[floor];
-          if (existing && existing.type === "反転") {
+          // base elevator movement is 1 (表示上は '1つ上')
+          const base = 1;
+          // existing entry for this floor
+          const existing = window.__changeState.elevatorPerFloor[floor] || null;
+          // determine previous cumulative increment (inc). Preserve invert flag if present.
+          let prevInc = 0;
+          let wasInverted = false;
+          if (existing) {
+            if (typeof existing.inc === "number") prevInc = existing.inc;
+            else if (typeof existing.floors === "number")
+              prevInc = Math.max(0, existing.floors - base);
+            // determine inversion from dir or legacy flags
+            if (existing.dir) {
+              wasInverted = existing.dir === "下";
+            } else if (typeof existing.invert !== "undefined") {
+              wasInverted = !!existing.invert;
+            } else if (existing.type === "反転") {
+              wasInverted = true;
+            }
+          }
+
+          const newInc = prevInc + num;
+          // allowed cumulative increments for this floor
+          const allowedIncs = targetCfg["数字増加"]; // e.g. [1,2]
+          if (!Array.isArray(allowedIncs) || !allowedIncs.includes(newInc)) {
+            // close keyword modal (magic modal) then show invalid alert
             try {
-              delete window.__changeState.elevatorPerFloor[floor];
+              const keywordModal = document.getElementById("keyword-modal");
+              if (keywordModal) keywordModal.style.display = "none";
             } catch (e) {}
+            invalid();
+            return;
+          }
+
+          // persist per-floor: store numeric increment and direction separately so
+          // 意味反転 and 数字増加 can be combined. Keep 'type' for backward compat.
+          // Determine current direction: prefer existing.dir/existing.direction, otherwise default '上'.
+          let currentDir = "上";
+          if (existing) {
+            currentDir =
+              existing.dir ||
+              existing.direction ||
+              (existing.type === "反転" ? "下" : "上");
+          }
+          const newCfg = {
+            inc: newInc,
+            dir: currentDir,
+          };
+          window.__changeState.elevatorPerFloor[floor] = newCfg;
+          try {
+            console.log(
+              `[change] elevator floor ${floor} applied numeric increase -> inc=${newCfg.inc}, dir=${newCfg.dir}`,
+              newCfg
+            );
+          } catch (e) {}
+        } else if (effect === "意味反転") {
+          // Toggle meaning inversion per-floor but preserve any numeric increments
+          const existing = window.__changeState.elevatorPerFloor[floor];
+          if (existing) {
+            // If numeric increment exists, flip dir
+            if (typeof existing.inc === "number") {
+              existing.dir = existing.dir === "上" ? "下" : "上";
+              window.__changeState.elevatorPerFloor[floor] = existing;
+              try {
+                console.log(
+                  `[change] elevator floor ${floor} toggled invert -> inc=${existing.inc}, dir=${existing.dir}`,
+                  existing
+                );
+              } catch (e) {}
+            } else if (existing.type === "増加") {
+              // legacy shape: had 増加 but without inc field
+              const prevInc =
+                typeof existing.inc === "number"
+                  ? existing.inc
+                  : typeof existing.floors === "number"
+                  ? Math.max(0, existing.floors - 1)
+                  : 0;
+              const dir = existing.direction || existing.dir || "上";
+              window.__changeState.elevatorPerFloor[floor] = {
+                inc: prevInc,
+                dir: dir === "上" ? "下" : "上",
+              };
+              try {
+                const cfg = window.__changeState.elevatorPerFloor[floor];
+                console.log(
+                  `[change] elevator floor ${floor} legacy increase+invert -> inc=${cfg.inc}, dir=${cfg.dir}`,
+                  cfg
+                );
+              } catch (e) {}
+            } else if (existing.type === "反転") {
+              // remove pure inversion
+              try {
+                delete window.__changeState.elevatorPerFloor[floor];
+                try {
+                  console.log(
+                    `[change] elevator floor ${floor} removed pure inversion (no config)`
+                  );
+                } catch (e) {}
+              } catch (e) {}
+            } else {
+              // set pure inversion as dir='下' (flip default up)
+              window.__changeState.elevatorPerFloor[floor] = {
+                inc: 0,
+                dir: "下",
+              };
+              try {
+                const cfg = window.__changeState.elevatorPerFloor[floor];
+                console.log(
+                  `[change] elevator floor ${floor} set pure inversion fallback -> inc=${cfg.inc}, dir=${cfg.dir}`,
+                  cfg
+                );
+              } catch (e) {}
+            }
           } else {
+            // no existing config -> set as inverted relative to default
             window.__changeState.elevatorPerFloor[floor] = {
-              type: "反転",
+              inc: 0,
+              dir: "下",
             };
+            try {
+              const cfg = window.__changeState.elevatorPerFloor[floor];
+              console.log(
+                `[change] elevator floor ${floor} set inversion (new) -> inc=${cfg.inc}, dir=${cfg.dir}`,
+                cfg
+              );
+            } catch (e) {}
           }
         } else {
           invalid();
           return;
         }
 
-        // update magic description for elevator to reflect per-floor changes
-        try {
-          window.__originalAllInfo =
-            window.__originalAllInfo || JSON.parse(JSON.stringify(allInfo));
-          const changes = window.__changeState.elevatorPerFloor || {};
-          const cfg = changes[floor] || null;
-          let base =
-            (window.__originalAllInfo &&
-              window.__originalAllInfo.box_1f &&
-              window.__originalAllInfo.box_1f.content) ||
-            (allInfo && allInfo.box_1f && allInfo.box_1f.content) ||
-            "";
-          if (typeof base === "string") base = base.replace(/\\n/g, "\n");
-          let newContent = base;
-          if (cfg) {
-            if (cfg.type === "増加") {
-              const num = cfg.floors || cfg.amount || 1;
-              const dir = cfg.direction || "上";
-              if (/1つ[上下]/.test(base)) {
-                newContent = base.replace(/1つ[上下]/g, `${num}つ${dir}`);
-              } else {
-                newContent = base.replace(
-                  /唱えることで[\s\S]*?移動する。/,
-                  `唱えることで${num}つ${dir}の階の同じ場所に移動する。`
-                );
-              }
-            } else if (cfg.type === "反転") {
-              if (typeof base === "string") {
-                if (/1つ上/.test(base)) {
-                  newContent = base.replace(/1つ上/g, "1つ下");
-                } else if (/1つ下/.test(base)) {
-                  newContent = base.replace(/1つ下/g, "1つ上");
-                } else {
-                  newContent = base.replace(
-                    /(唱えることで[\s\S]*?)(上|下)([\s\S]*?移動する。)/,
-                    (m, p1, p2, p3) => {
-                      const f = p2 === "上" ? "下" : "上";
-                      return `${p1}${f}${p3}`;
-                    }
-                  );
-                }
-              }
-            }
-          }
-          if (allInfo && allInfo.box_1f) {
-            allInfo.box_1f.content = newContent;
-          }
-        } catch (e) {}
+        // Note: UI rendering (when opening the magic modal) will apply per-floor
+        // presentation using window.__changeState; do NOT mutate allInfo here so
+        // that changes remain strictly per-floor and are applied only when the
+        // player opens the magic modal on the relevant floor.
       } else if (target === "ムーブ") {
-        // For ムーブ, only '意味反転' is applicable and it toggles
+        // For ムーブ, only '意味反転' is applicable.
         if (effect !== "意味反転") {
           invalid();
           return;
         }
-        const existingMove =
-          window.__changeState.global && window.__changeState.global.move;
-        if (existingMove && existingMove.type === "反転") {
-          // remove inversion
-          try {
-            delete window.__changeState.global.move;
-            // restore original text if available
-            window.__originalAllInfo =
-              window.__originalAllInfo || JSON.parse(JSON.stringify(allInfo));
-            const orig =
-              (window.__originalAllInfo &&
-                window.__originalAllInfo.box_3f &&
-                window.__originalAllInfo.box_3f.content) ||
-              "";
-            if (allInfo && allInfo.box_3f) allInfo.box_3f.content = orig;
-          } catch (e) {}
-        } else {
-          // apply inversion
-          try {
-            window.__changeState.global.move = { type: "反転" };
-            window.__originalAllInfo =
-              window.__originalAllInfo || JSON.parse(JSON.stringify(allInfo));
-            const base3 =
-              (window.__originalAllInfo &&
-                window.__originalAllInfo.box_3f &&
-                window.__originalAllInfo.box_3f.content) ||
-              (allInfo && allInfo.box_3f && allInfo.box_3f.content) ||
-              "";
-            // perform single replacement of the word '同じ' -> '違う'
-            let new3;
-            if (typeof base3 === "string") {
-              // replace only the first occurrence
-              new3 = base3.replace(/同じ/, "違う");
-            } else {
-              new3 = base3;
+        // 意味反転は現在の状態を反転する効果であり、モーダルで "同じ/違う" を
+        // ユーザーが直接指定するものではありません。ここでは per-floor 優先で
+        // 既存設定を読み、同じなら違うに・違うなら同じに反転させます。
+        try {
+          window.__changeState.global = window.__changeState.global || {};
+          window.__changeStateByFloor = window.__changeStateByFloor || {};
+          window.__changeStateByFloor[floor] =
+            window.__changeStateByFloor[floor] || {};
+
+          // find existing config (per-floor preferred)
+          const existing =
+            window.__changeStateByFloor[floor] &&
+            window.__changeStateByFloor[floor]["ムーブ"]
+              ? window.__changeStateByFloor[floor]["ムーブ"]
+              : (window.__changeState.global &&
+                  (window.__changeState.global["ムーブ"] ||
+                    window.__changeState.global["move"])) ||
+                null;
+
+          let currentOpt = "同じ";
+          if (existing) {
+            if (existing.opt) currentOpt = existing.opt;
+            else {
+              // derive from legacy flags
+              const c = existing;
+              const inverted =
+                c.type === "反転" ||
+                c.invert === true ||
+                c.reversed === true ||
+                c.revert === true ||
+                c.dir === "下" ||
+                c.direction === "下";
+              currentOpt = inverted ? "違う" : "同じ";
             }
-            if (allInfo && allInfo.box_3f) allInfo.box_3f.content = new3;
+          }
+
+          const flipped = currentOpt === "同じ" ? "違う" : "同じ";
+
+          // persist flip both per-floor and globally (global kept for backward compat)
+          window.__changeState.global.move = { type: "反転", opt: flipped };
+          window.__changeStateByFloor[floor]["ムーブ"] = {
+            type: "反転",
+            opt: flipped,
+          };
+
+          try {
+            console.log("[change] per-floor move toggled", {
+              floor: floor,
+              from: currentOpt,
+              to: flipped,
+              cfg: window.__changeStateByFloor[floor]["ムーブ"],
+            });
           } catch (e) {}
-        }
+        } catch (e) {}
       } else if (target === "クッショ") {
         // Special-case: クッショ supports only numeric +1 globally
         if (effect !== "数字増加") {
@@ -403,29 +515,11 @@ export function openChangeModal() {
           invalid();
           return;
         }
-        // persist globally
-        window.__changeState.global["クッショ"] = { type: "増加", amount: num };
-        // update info text for cushion: replace first occurrence of '3歩' with '4歩'
-        try {
-          window.__originalAllInfo =
-            window.__originalAllInfo || JSON.parse(JSON.stringify(allInfo));
-          const baseC =
-            (window.__originalAllInfo &&
-              window.__originalAllInfo.box_cushion &&
-              window.__originalAllInfo.box_cushion.content) ||
-            (allInfo && allInfo.box_cushion && allInfo.box_cushion.content) ||
-            "";
-          let newC = baseC;
-          if (typeof baseC === "string") {
-            newC = baseC.replace(/(\d+)歩/, (m, p1) => {
-              // increase by 1
-              const next = String(Number(p1) + num);
-              return `${next}歩`;
-            });
-          }
-          if (allInfo && allInfo.box_cushion)
-            allInfo.box_cushion.content = newC;
-        } catch (e) {}
+        // persist globally; accumulate if already present
+        window.__changeState.global["クッショ"] = window.__changeState.global[
+          "クッショ"
+        ] || { type: "増加", amount: 0 };
+        window.__changeState.global["クッショ"].amount += num;
       } else {
         // For other spells, accept numeric/meaning changes and save globally
         if (effect === "数字増加") {
@@ -439,15 +533,7 @@ export function openChangeModal() {
           invalid();
           return;
         }
-        // try to update a generic info entry if exists
-        try {
-          const keyMap = { クッショ: "box_cushion", チェンジ: "box_change" };
-          const key = keyMap[target];
-          if (key && allInfo && allInfo[key]) {
-            allInfo[key].content =
-              allInfo[key].content + "\n(チェンジで編集済み)";
-          }
-        } catch (e) {}
+        // do not mutate allInfo here; UI will apply per-floor/global presentation when needed
       }
 
       // refresh magic list UI if open
@@ -488,13 +574,22 @@ export function openChangeModal() {
         } catch (e) {}
       } catch (e) {}
 
+      // Close magic modal (keyword modal) if open, then notify the player
       try {
-        showCustomAlert("チェンジを適用しました");
-      } catch (e) {
+        const keywordModal = document.getElementById("keyword-modal");
+        if (keywordModal) keywordModal.style.display = "none";
+      } catch (e) {}
+
+      // ensure modal is closed before showing alert
+      setTimeout(() => {
         try {
-          window.alert("チェンジを適用しました");
-        } catch (e2) {}
-      }
+          showCustomAlert("チェンジを適用しました");
+        } catch (e) {
+          try {
+            showCustomAlert("チェンジを適用しました");
+          } catch (e2) {}
+        }
+      }, 10);
       modal.style.display = "none";
     });
   } else {

@@ -136,7 +136,8 @@ export default class Player extends GameObject {
   // unified fall handler: show alert (prefer custom) then call mapService.onFall()
   // and teleport player back to start. Uses requestAnimationFrame when available
   // so the renderer can show the player stepping onto the tile first.
-  triggerFall(message) {
+  // options: { onClose: function } -- optional callback to run after the built-in death handling when the alert is closed
+  triggerFall(message, options = {}) {
     const doOnClose = () => {
       try {
         this.mapService.onFall();
@@ -160,6 +161,14 @@ export default class Player extends GameObject {
         } else {
           // fallback to global START_* constants
           this.teleport(START_POS_X, START_POS_Y, START_FLOOR);
+        }
+      } catch (e) {}
+      // call optional external onClose after internal death handling
+      try {
+        if (options && typeof options.onClose === "function") {
+          try {
+            options.onClose();
+          } catch (e) {}
         }
       } catch (e) {}
     };
