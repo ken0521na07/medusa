@@ -158,8 +158,10 @@ function _ensureMagicUI() {
 
     // If effective steps equals 4, accept the alternative keyword(s) requested via チェンジ
     if (effectiveCushionSteps === 4) {
-      normalizedCushion.push("exit");
-      normalizedCushion.push("エグジット");
+      // accept 'fan' variants when クッショ has been increased to 4歩
+      normalizedCushion.push("fan");
+      normalizedCushion.push("ふぁん");
+      normalizedCushion.push("ファン");
     }
 
     const isCushionSpell =

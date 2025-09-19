@@ -700,6 +700,6 @@ export const STATUE_SYNC = {
   statue_m: [2, 6],
 };
 
-export const START_POS_X = 4;
-export const START_POS_Y = 0; // changed from 10 to 5 to start at y=5
+export const START_POS_X = 5;
+export const START_POS_Y = 9; // changed from 10 to 5 to start at y=5
 export const START_FLOOR = 4; // start on 1F by default

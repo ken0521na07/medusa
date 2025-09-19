@@ -118,7 +118,13 @@ export function handleGetPuzzlePiece(setId, pieceId, playerPos, options = {}) {
     if (!puzzleSet.unlocked) puzzleSet.unlocked = true;
     // remove from map
     if (playerPos && typeof playerPos.x === "number")
-      setTile(playerPos.x, playerPos.y, 0);
+      // prefer explicit floor when provided
+      setTile(
+        playerPos.x,
+        playerPos.y,
+        0,
+        typeof playerPos.floor === "number" ? playerPos.floor : undefined
+      );
     // show native/custom alert indicating piece obtained unless suppressed
     try {
       if (!options.suppressAlert) {
@@ -154,7 +160,7 @@ export function handleGetPuzzlePiece(setId, pieceId, playerPos, options = {}) {
         }
 
         if (typeof showCustomAlert === "function") {
-          // showCustomAlert without autoClose so user must close it manually
+          // showCustomAlert so user must close it manually
           showCustomAlert(message, { allowOverlayClose: true });
         } else {
           window.alert(message);
@@ -163,6 +169,34 @@ export function handleGetPuzzlePiece(setId, pieceId, playerPos, options = {}) {
     } catch (e) {}
     // update UI: when opening puzzle modal, render grid will show only unlocked pieces as their images
   }
+}
+
+// 新規: 指定したセット全体を入手扱いにする（3F/5F/B1 用）
+export function handleGetPuzzleSet(setId, playerPos, options = {}) {
+  const puzzleSet = allPuzzles[setId];
+  if (!puzzleSet) return;
+  if (!puzzleSet.unlocked) puzzleSet.unlocked = true;
+  // unlock all pieces
+  for (const p of puzzleSet.pieces) p.unlocked = true;
+  // remove tile from map if position provided
+  if (playerPos && typeof playerPos.x === "number")
+    setTile(
+      playerPos.x,
+      playerPos.y,
+      0,
+      typeof playerPos.floor === "number" ? playerPos.floor : undefined
+    );
+  // show simple message
+  try {
+    if (!options.suppressAlert) {
+      const message = "謎を入手した";
+      if (typeof showCustomAlert === "function") {
+        showCustomAlert(message, { allowOverlayClose: true });
+      } else {
+        window.alert(message);
+      }
+    }
+  } catch (e) {}
 }
 
 export function renderPuzzleSetList(container) {

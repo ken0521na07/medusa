@@ -1,31 +1,61 @@
 export function showCustomAlert(
   message,
-  {
-    autoClose = false,
-    timeout = 0,
-    onClose = null,
-    allowOverlayClose = true,
-  } = {}
+  { timeout = 0, onClose = null, allowOverlayClose = true } = {}
 ) {
-  const overlay = document.getElementById("custom-alert-overlay");
-  const textEl = document.getElementById("custom-alert-text");
-  const closeBtn = document.getElementById("custom-alert-close");
-  if (!overlay || !textEl) return;
-  textEl.textContent = message + "";
-  // debug: always log alerts to console for easier testing
+  // try to find existing elements
+  let overlay = document.getElementById("custom-alert-overlay");
+  let textEl = document.getElementById("custom-alert-text");
+  let closeBtn = document.getElementById("custom-alert-close");
+
+  // fallback: if elements are missing, create a minimal overlay so alert always appears
+  if (!overlay || !textEl) {
+    try {
+      overlay = document.createElement("div");
+      overlay.id = "custom-alert-overlay";
+      overlay.className = "custom-alert-overlay";
+      overlay.style.display = "none";
+      const box = document.createElement("div");
+      box.className = "custom-alert-box";
+      textEl = document.createElement("div");
+      textEl.id = "custom-alert-text";
+      textEl.className = "custom-alert-text";
+      closeBtn = document.createElement("button");
+      closeBtn.id = "custom-alert-close";
+      closeBtn.className = "puzzle-popup-close";
+      closeBtn.textContent = "閉じる";
+      box.appendChild(textEl);
+      box.appendChild(closeBtn);
+      overlay.appendChild(box);
+      try {
+        document.body.appendChild(overlay);
+      } catch (e) {}
+    } catch (e) {
+      // if DOM not available, fallback to native alert
+      try {
+        console.log("[customAlert fallback]", message);
+      } catch (e2) {}
+      try {
+        window.alert(message);
+      } catch (e2) {}
+      return;
+    }
+  }
+
+  // set text and log
   try {
+    textEl.textContent = message + "";
     console.log("[customAlert] show:", message);
   } catch (e) {}
-  // ensure overlay is on top
+
+  // ensure overlay visible and on top
   try {
     overlay.style.zIndex = 20000;
   } catch (e) {}
   overlay.style.display = "flex";
 
-  // clear any previous handlers to avoid duplicates
+  // cleanup existing handlers
   const close = () => {
     overlay.style.display = "none";
-    // cleanup handlers
     overlay.onclick = null;
     if (closeBtn) closeBtn.onclick = null;
     try {
@@ -34,17 +64,21 @@ export function showCustomAlert(
     if (onClose) onClose();
   };
 
-  // attach overlay click only if allowed
+  // attach close handler to button
+  if (closeBtn) closeBtn.onclick = close;
+
+  // attach overlay click with a slight delay to avoid the click that opened the alert
   if (allowOverlayClose) {
-    overlay.onclick = (e) => {
-      if (e.target === overlay) close();
-    };
+    setTimeout(() => {
+      overlay.onclick = (e) => {
+        if (e.target === overlay) close();
+      };
+    }, 50);
   } else {
-    // ensure overlay doesn't close on accidental clicks for a short period
     overlay.onclick = null;
   }
-  if (closeBtn) closeBtn.onclick = close;
-  if (autoClose && timeout > 0) setTimeout(close, timeout);
+
+  // never auto-close from codepath: user must close explicitly
 }
 
 export function openPuzzleModal(setId) {

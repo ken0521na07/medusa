@@ -1,5 +1,6 @@
 import {
   handleGetPuzzlePiece,
+  handleGetPuzzleSet,
   renderPuzzleSetList,
 } from "../managers/puzzleManager.js";
 import {
@@ -38,6 +39,7 @@ import GameObject from "../entities/gameObject.js";
 import { MAPS } from "../core/constants.js";
 import * as statueManager from "../managers/statueManager.js";
 import magicManager from "../managers/magicManager.js";
+import * as changeManager from "../managers/changeManager.js";
 
 export async function setupUI() {
   const app = initEngine();
@@ -114,14 +116,98 @@ export async function setupUI() {
       // step snakes (only visible ones by default)
       const moved = snakeManager.stepSnakes({ onlyVisible: true });
       // moved is an array of {id,x,y,floor}
-      // you can use it for debug if needed
-      // console.log('snakes moved', moved);
 
       // after both have moved (player and snake), evaluate line-of-sight
       try {
         if (player.isSnakeInSight()) {
           // if snake now visible, trigger fall
           player.triggerFall("ヘビを見て石化してしまった...！");
+        }
+      } catch (e) {}
+
+      // Prompt to activate チェンジ when standing on the change tile (once per entry)
+      try {
+        const tileUnder = mapService.getTile(
+          player.gridX,
+          player.gridY,
+          player.floor
+        );
+        if (tileUnder === TILE.CHANGE || tileUnder === "change") {
+          const posKey = `${player.gridX},${player.gridY},${player.floor}`;
+          window.__lastChangePrompt = window.__lastChangePrompt || null;
+          if (window.__lastChangePrompt !== posKey) {
+            window.__lastChangePrompt = posKey;
+            let confirmModal = document.getElementById(
+              "change-activate-confirm"
+            );
+            if (!confirmModal) {
+              confirmModal = document.createElement("div");
+              confirmModal.id = "change-activate-confirm";
+              confirmModal.className = "modal-wrapper";
+              confirmModal.style.display = "flex";
+              confirmModal.style.position = "fixed";
+              confirmModal.style.left = "0";
+              confirmModal.style.top = "0";
+              confirmModal.style.width = "100%";
+              confirmModal.style.height = "100%";
+              confirmModal.style.alignItems = "center";
+              confirmModal.style.justifyContent = "center";
+              confirmModal.style.zIndex = 26000;
+
+              const box = document.createElement("div");
+              box.className = "modal-content";
+              box.style.padding = "12px";
+              box.style.background = "#fff";
+              box.style.borderRadius = "6px";
+              box.style.display = "flex";
+              box.style.flexDirection = "column";
+              box.style.gap = "8px";
+              box.style.minWidth = "240px";
+
+              const msg = document.createElement("div");
+              msg.textContent = "チェンジを発動しますか？";
+              box.appendChild(msg);
+
+              const btnWrap = document.createElement("div");
+              btnWrap.style.display = "flex";
+              btnWrap.style.gap = "8px";
+              btnWrap.style.justifyContent = "center";
+
+              const yes = document.createElement("button");
+              yes.textContent = "はい";
+              yes.className = "ui-button";
+
+              const no = document.createElement("button");
+              no.textContent = "いいえ";
+              no.className = "ui-button";
+
+              btnWrap.appendChild(yes);
+              btnWrap.appendChild(no);
+              box.appendChild(btnWrap);
+              confirmModal.appendChild(box);
+              document.body.appendChild(confirmModal);
+
+              yes.addEventListener("click", () => {
+                try {
+                  if (
+                    changeManager &&
+                    typeof changeManager.openChangeModal === "function"
+                  )
+                    changeManager.openChangeModal();
+                } catch (e) {}
+                confirmModal.style.display = "none";
+              });
+
+              no.addEventListener("click", () => {
+                confirmModal.style.display = "none";
+              });
+            } else {
+              confirmModal.style.display = "flex";
+            }
+          }
+        } else {
+          // clear tracker so re-entering the tile later shows the prompt again
+          window.__lastChangePrompt = null;
         }
       } catch (e) {}
     } catch (e) {}
@@ -291,8 +377,16 @@ export async function setupUI() {
     // If standing on an info_* tile that exists in allInfo, unlock it (add to info modal list)
     // and show a custom alert. Do NOT open the info modal automatically.
     try {
-      if (typeof currentTileType === "string" && allInfo[currentTileType]) {
-        const info = allInfo[currentTileType];
+      // support tile -> infoKey aliases (map uses info_hole but allInfo stores about_hole)
+      const INFO_TILE_ALIAS = {
+        info_hole: "about_hole",
+      };
+      const infoKey =
+        (typeof currentTileType === "string" &&
+          (INFO_TILE_ALIAS[currentTileType] || currentTileType)) ||
+        null;
+      if (infoKey && allInfo[infoKey]) {
+        const info = allInfo[infoKey];
         // only unlock once
         if (!info.unlocked) {
           info.unlocked = true;
@@ -369,69 +463,66 @@ export async function setupUI() {
     } catch (e) {}
 
     switch (currentTileType) {
-      case TILE.PUZZLE_3:
-        // 3F の一括解放：1マス調べるだけで4つ全て解放される
-        // Do NOT open the puzzle modal automatically when A is pressed — only mark unlocked and show alert.
+      // 1F/2F: single-suit pieces -> delegate to handleGetPuzzlePiece
+      case TILE.PUZZLE_1H:
+      case TILE.PUZZLE_1S:
+      case TILE.PUZZLE_1C:
+      case TILE.PUZZLE_1D:
+      case TILE.PUZZLE_2H:
+      case TILE.PUZZLE_2S:
+      case TILE.PUZZLE_2C:
+      case TILE.PUZZLE_2D:
         try {
-          const set = allPuzzles["elevator_3f"];
-          if (set) {
-            set.unlocked = true;
-            for (const p of set.pieces) p.unlocked = true;
-            // remove the tile from the map so it can't be obtained again
-            try {
-              mapService.setTile(x, y, 0);
-            } catch (e) {}
-            // show only the custom alert — do NOT open the puzzle modal automatically
-            try {
-              showCustomAlert(
-                "謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
-              );
-            } catch (e) {
-              try {
-                window.alert(
-                  "謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
-                );
-              } catch (e2) {}
-            }
-          }
+          handleGetPuzzlePiece(
+            "elevator_" + (player.floor === 2 ? "2f" : "1f"),
+            currentTileType,
+            { x, y, floor: player.floor }
+          );
         } catch (e) {
-          console.error("failed to unlock 3F puzzles", e);
+          console.error("failed to handle 1F/2F puzzle piece pickup", e);
         }
         break;
 
-      // 5F: single-tile unlock (same behavior as 3F)
+      // 3F: set unlock
+      case TILE.PUZZLE_3:
+        try {
+          handleGetPuzzleSet("elevator_3f", { x, y, floor: player.floor });
+        } catch (e) {
+          console.error("failed to handle 3F puzzle set pickup", e);
+        }
+        break;
+
+      // 4F: single-suit pieces -> delegate to handleGetPuzzlePiece
+      case TILE.PUZZLE_4H:
+      case TILE.PUZZLE_4D:
+      case TILE.PUZZLE_4S:
+      case TILE.PUZZLE_4C:
+        try {
+          handleGetPuzzlePiece("elevator_4f", currentTileType, {
+            x,
+            y,
+            floor: player.floor,
+          });
+        } catch (e) {
+          console.error("failed to handle 4F puzzle piece pickup", e);
+        }
+        break;
+
+      // 5F: set unlock
       case TILE.PUZZLE_5:
         try {
-          const set = allPuzzles["elevator_5f"];
-          if (set) {
-            set.unlocked = true;
-            for (const p of set.pieces) p.unlocked = true;
-            mapService.setTile(x, y, 0);
-            // show only the custom alert — do NOT open the puzzle modal automatically
-            showCustomAlert(
-              "謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
-            );
-          }
+          handleGetPuzzleSet("elevator_5f", { x, y, floor: player.floor });
         } catch (e) {
-          console.error("failed to unlock 5F puzzles", e);
+          console.error("failed to handle 5F puzzle set pickup", e);
         }
         break;
 
-      // B1F: single-tile unlock (same behavior as 3F)
+      // B1F: set unlock
       case TILE.PUZZLE_B1:
         try {
-          const set = allPuzzles["elevator_b1"];
-          if (set) {
-            set.unlocked = true;
-            for (const p of set.pieces) p.unlocked = true;
-            mapService.setTile(x, y, 0);
-            // show only the custom alert — do NOT open the puzzle modal automatically
-            showCustomAlert(
-              "謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
-            );
-          }
+          handleGetPuzzleSet("elevator_b1", { x, y, floor: player.floor });
         } catch (e) {
-          console.error("failed to unlock B1 puzzles", e);
+          console.error("failed to handle B1 puzzle set pickup", e);
         }
         break;
 
@@ -440,15 +531,184 @@ export async function setupUI() {
     }
   }
 
+  // action A button: handle interactions with tiles (info, puzzles, boxes, etc.)
   const actionA = document.getElementById("action-a-btn");
-  if (actionA) actionA.addEventListener("click", handleActionEvent);
+  if (actionA) {
+    let _lastActionAAt = 0;
+    const ACTION_A_DEBOUNCE_MS = 150;
+    // support touch/pointer devices and fallback click
+    actionA.addEventListener(
+      "pointerup",
+      (e) => {
+        try {
+          e.preventDefault();
+        } catch (err) {}
+        try {
+          const now = Date.now();
+          if (now - _lastActionAAt < ACTION_A_DEBOUNCE_MS) return;
+          _lastActionAAt = now;
+          handleActionEvent();
+        } catch (err) {}
+      },
+      { passive: false }
+    );
+    actionA.addEventListener("click", (e) => {
+      try {
+        e.preventDefault();
+      } catch (err) {}
+      try {
+        const now = Date.now();
+        if (now - _lastActionAAt < ACTION_A_DEBOUNCE_MS) return;
+        _lastActionAAt = now;
+        handleActionEvent();
+      } catch (err) {}
+    });
+  }
 
   const itemBtn = document.getElementById("item-btn");
   const keywordModal = document.getElementById("keyword-modal");
   if (itemBtn && keywordModal) {
     itemBtn.addEventListener("click", () => {
       const list = document.getElementById("magic-list");
-      // render magic list (only unlocked box_* entries)
+      // --- チェンジの説明文をフロアごとに反映 ---
+      try {
+        const player = window.__playerInstance;
+        const floor = player ? player.floor : null;
+        // 保存対象: 3F:エレベ/ムーブ, 4F:エレベ/クッショ, 5F:エレベ
+        const floorMap = {
+          3: ["エレベ", "ムーブ"],
+          4: ["エレベ", "クッショ"],
+          5: ["エレベ"],
+        };
+        // 元の説明文を保存
+        window.__originalAllInfo =
+          window.__originalAllInfo || JSON.parse(JSON.stringify(allInfo));
+        // まず全てリセット
+        ["box_1f", "box_3f", "box_cushion"].forEach((key) => {
+          if (window.__originalAllInfo[key] && allInfo[key]) {
+            allInfo[key].content = window.__originalAllInfo[key].content;
+          }
+        });
+        // フロアごとのチェンジ状態を反映
+        if (floor && floorMap[floor]) {
+          // prefer an explicit per-floor store if present, but fall back to older global locations
+          const perFloorState =
+            (window.__changeStateByFloor &&
+              window.__changeStateByFloor[floor]) ||
+            {};
+          const globalState = window.__changeState || {};
+
+          floorMap[floor].forEach((label) => {
+            let key = null;
+            if (label === "エレベ") key = "box_1f";
+            if (label === "ムーブ") key = "box_3f";
+            if (label === "クッショ") key = "box_cushion";
+            if (!key) return;
+
+            // determine config for this label, checking per-floor store first then fallbacks
+            let cfg = null;
+            try {
+              if (label === "エレベ") {
+                // elevator changes are encoded per-floor in window.__changeState.elevatorPerFloor
+                cfg =
+                  (globalState &&
+                    globalState.elevatorPerFloor &&
+                    globalState.elevatorPerFloor[floor]) ||
+                  perFloorState["エレベ"] ||
+                  null;
+              } else if (label === "ムーブ") {
+                // prefer per-floor saved move changes, otherwise fall back to global.move but only for 3F
+                cfg =
+                  perFloorState["ムーブ"] ||
+                  (globalState &&
+                  globalState.global &&
+                  globalState.global.move &&
+                  floor === 3
+                    ? globalState.global.move
+                    : null) ||
+                  null;
+              } else if (label === "クッショ") {
+                // prefer per-floor saved cushion changes, otherwise fall back to global クッショ but only for 4F
+                cfg =
+                  perFloorState["クッショ"] ||
+                  (globalState &&
+                  globalState.global &&
+                  globalState.global["クッショ"] &&
+                  floor === 4
+                    ? globalState.global["クッショ"]
+                    : null) ||
+                  null;
+              }
+            } catch (e) {
+              cfg = null;
+            }
+
+            // チェンジ内容があれば反映
+            if (cfg) {
+              // numeric increase
+              if (cfg.type === "増加") {
+                const base =
+                  window.__originalAllInfo && window.__originalAllInfo[key]
+                    ? window.__originalAllInfo[key].content
+                    : (allInfo[key] && allInfo[key].content) || "";
+                const num = cfg.floors || cfg.amount || cfg.amount || 1;
+                if (label === "エレベ") {
+                  const dir = cfg.direction || "上";
+                  if (typeof base === "string") {
+                    if (/1つ[上下]/.test(base)) {
+                      allInfo[key].content = base.replace(
+                        /1つ[上下]/g,
+                        `${num}つ${dir}`
+                      );
+                    } else {
+                      allInfo[key].content = base.replace(
+                        /唱えることで[\s\S]*?移動する。/,
+                        `唱えることで${num}つ${dir}の階の同じ場所に移動する。`
+                      );
+                    }
+                  }
+                } else if (label === "クッショ") {
+                  if (typeof base === "string") {
+                    allInfo[key].content = base.replace(
+                      /(\d+)歩/,
+                      (m, p1) => `${Number(p1) + num}歩`
+                    );
+                  }
+                }
+              } else if (cfg.type === "反転") {
+                const base =
+                  window.__originalAllInfo && window.__originalAllInfo[key]
+                    ? window.__originalAllInfo[key].content
+                    : (allInfo[key] && allInfo[key].content) || "";
+                if (label === "エレベ") {
+                  if (typeof base === "string") {
+                    if (/1つ上/.test(base)) {
+                      allInfo[key].content = base.replace(/1つ上/, "1つ下");
+                    } else if (/1つ下/.test(base)) {
+                      allInfo[key].content = base.replace(/1つ下/, "1つ上");
+                    } else {
+                      allInfo[key].content = base.replace(
+                        /(唱えることで[\s\S]*?)(上|下)([\sS]*?移動する。)/,
+                        (m, p1, p2, p3) => {
+                          const f = p2 === "上" ? "下" : "上";
+                          return `${p1}${f}${p3}`;
+                        }
+                      );
+                    }
+                  }
+                } else if (label === "ムーブ") {
+                  if (typeof base === "string") {
+                    allInfo[key].content = base.replace(/同じ/, "違う");
+                  }
+                }
+              }
+            }
+          });
+        }
+      } catch (e) {
+        console.error("changeStateByFloor magic modal update failed", e);
+      }
+      // ---
       try {
         // call imported renderMagicList directly to avoid scope issues
         if (typeof renderMagicList === "function") renderMagicList(list);
@@ -1027,505 +1287,6 @@ function openMoveModal() {
 
       if (movedOK) {
         showCustomAlert("「ムーブ」を唱え、像を移動した。");
-      }
-      modal.style.display = "none";
-    });
-  } else {
-    modal.style.display = "flex";
-  }
-}
-
-// Create change modal UI on demand
-function openChangeModal() {
-  let modal = document.getElementById("change-modal");
-  if (!modal) {
-    modal = document.createElement("div");
-    modal.id = "change-modal";
-    modal.className = "modal-wrapper";
-    modal.style.display = "flex";
-    modal.style.position = "fixed";
-    modal.style.left = "0";
-    modal.style.top = "0";
-    modal.style.width = "100%";
-    modal.style.height = "100%";
-    modal.style.alignItems = "center";
-    modal.style.justifyContent = "center";
-    modal.style.zIndex = 25000;
-
-    const box = document.createElement("div");
-    box.className = "modal-content";
-    // slightly more padding to match other modals
-    box.style.padding = "16px";
-    box.style.background = "#fff";
-    box.style.borderRadius = "6px";
-    box.style.display = "flex";
-    box.style.flexDirection = "column";
-    box.style.gap = "8px";
-    box.style.minWidth = "240px";
-
-    // テキスト1
-    const t1 = document.createElement("div");
-    t1.textContent = "①「チェンジ」を使用する対象の魔法を選択してください";
-    box.appendChild(t1);
-
-    // プルダウン1
-    const select1 = document.createElement("select");
-    select1.id = "change-target-select";
-    ["エレベ", "ムーブ", "クッショ", "チェンジ"].forEach((v) => {
-      const o = document.createElement("option");
-      o.value = v;
-      o.textContent = v;
-      select1.appendChild(o);
-    });
-    box.appendChild(select1);
-
-    // direction select (for エレベ)
-    const dirLabel = document.createElement("div");
-    dirLabel.id = "change-direction-label";
-    dirLabel.textContent = "方向を選択してください（上/下）";
-    dirLabel.style.display = "none";
-    box.appendChild(dirLabel);
-
-    const dirSelect = document.createElement("select");
-    dirSelect.id = "change-direction-select";
-    ["上", "下"].forEach((v) => {
-      const o = document.createElement("option");
-      o.value = v;
-      o.textContent = v;
-      dirSelect.appendChild(o);
-    });
-    dirSelect.style.display = "none";
-    box.appendChild(dirSelect);
-
-    // テキスト2
-    const t2 = document.createElement("div");
-    t2.textContent = "②使用する効果を選択してください（数字増加or意味反転）";
-    box.appendChild(t2);
-
-    // プルダウン2
-    const select2 = document.createElement("select");
-    select2.id = "change-effect-select";
-    ["数字増加", "意味反転"].forEach((v) => {
-      const o = document.createElement("option");
-      o.value = v;
-      o.textContent = v;
-      select2.appendChild(o);
-    });
-    // default to 意味反転
-    select2.value = "意味反転";
-    box.appendChild(select2);
-
-    // テキスト3 + プルダウン3 (増加量) (hidden by default)
-    const t3 = document.createElement("div");
-    t3.id = "change-amount-label";
-    t3.textContent = "③増加量を選択してください";
-    t3.style.display = "none";
-    box.appendChild(t3);
-
-    const select3 = document.createElement("select");
-    select3.id = "change-amount-select";
-    select3.style.display = "none";
-    for (let i = 1; i <= 5; i++) {
-      const o = document.createElement("option");
-      o.value = String(i);
-      o.textContent = String(i);
-      select3.appendChild(o);
-    }
-    box.appendChild(select3);
-
-    // ムーブ用オプション（同じ/違う）
-    const moveLabel = document.createElement("div");
-    moveLabel.id = "change-move-label";
-    moveLabel.textContent =
-      "ムーブで指定できる像: 同じ/違う を選択してください";
-    moveLabel.style.display = "none";
-    box.appendChild(moveLabel);
-
-    const moveSelect = document.createElement("select");
-    moveSelect.id = "change-move-select";
-    ["同じ", "違う"].forEach((v) => {
-      const o = document.createElement("option");
-      o.value = v;
-      o.textContent = v;
-      moveSelect.appendChild(o);
-    });
-    moveSelect.style.display = "none";
-    box.appendChild(moveSelect);
-
-    // submit button
-    const submit = document.createElement("button");
-    submit.textContent = "送信";
-    submit.id = "change-submit-btn";
-    // match other UI buttons appearance
-    submit.className = "ui-button";
-    box.appendChild(submit);
-
-    // close button
-    const close = document.createElement("button");
-    close.textContent = "閉じる";
-    close.id = "change-close-btn";
-    // mark as close for header styling consistency
-    close.className = "close-btn";
-    // make close button visually compact to match custom alert/modal close
-    close.style.padding = "6px 8px";
-    close.style.fontSize = "0.95em";
-    close.style.alignSelf = "flex-end";
-    box.appendChild(close);
-
-    modal.appendChild(box);
-    document.body.appendChild(modal);
-
-    // helper: ensure global change state exists
-    window.__changeState = window.__changeState || {
-      elevatorPerFloor: {},
-      global: {},
-    };
-
-    // show/hide fields based on target and effect
-    function updateFieldVisibility() {
-      const target = select1.value;
-      const effect = select2.value;
-      if (target === "エレベ") {
-        // Don't show explicit 上/下 selection in チェンジ modal for エレベ
-        dirLabel.style.display = "none";
-        dirSelect.style.display = "none";
-        if (effect === "数字増加") {
-          t3.style.display = "block";
-          select3.style.display = "block";
-        } else {
-          t3.style.display = "none";
-          select3.style.display = "none";
-        }
-        moveLabel.style.display = "none";
-        moveSelect.style.display = "none";
-      } else if (target === "ムーブ") {
-        // Move only needs effect selection; no extra fields shown here
-        dirLabel.style.display = "none";
-        dirSelect.style.display = "none";
-        t3.style.display = "none";
-        select3.style.display = "none";
-        moveLabel.style.display = "none";
-        moveSelect.style.display = "none";
-      } else if (target === "クッショ") {
-        // Cushion only supports 数字増加 (and we accept +1 only)
-        dirLabel.style.display = "none";
-        dirSelect.style.display = "none";
-        moveLabel.style.display = "none";
-        moveSelect.style.display = "none";
-        if (effect === "数字増加") {
-          t3.style.display = "block";
-          select3.style.display = "block";
-          // restrict options visually to 1 (we keep full select but validation enforces 1)
-        } else {
-          t3.style.display = "none";
-          select3.style.display = "none";
-        }
-      } else {
-        dirLabel.style.display = "none";
-        dirSelect.style.display = "none";
-        t3.style.display = "none";
-        select3.style.display = "none";
-        moveLabel.style.display = "none";
-        moveSelect.style.display = "none";
-      }
-    }
-
-    select1.addEventListener("change", updateFieldVisibility);
-    select2.addEventListener("change", updateFieldVisibility);
-
-    close.addEventListener("click", () => {
-      modal.style.display = "none";
-    });
-
-    submit.addEventListener("click", () => {
-      const target = select1.value;
-      const effect = select2.value;
-      const amount = select3.value;
-      const direction = dirSelect.value;
-      const moveOpt = moveSelect.value;
-
-      const player = window.__playerInstance;
-      const floor = player ? player.floor : null;
-
-      // validation helper
-      const invalid = () => {
-        try {
-          showCustomAlert("今はそれをする必要はない");
-        } catch (e) {
-          try {
-            window.alert("今はそれをする必要はない");
-          } catch (e2) {}
-        }
-      };
-
-      // Apply based on target
-      if (target === "エレベ") {
-        if (!floor) {
-          invalid();
-          return;
-        }
-        // Allowed increases per-floor (as specified)
-        const allowed = {
-          3: [2, 3],
-          // allow +1 on 4F per user request
-          4: [1, 2],
-          5: [2],
-        };
-        if (effect === "数字増加") {
-          const num = Number(amount || 1);
-          const allowedForFloor = allowed[floor] || [2];
-          if (!allowedForFloor.includes(num)) {
-            invalid();
-            return;
-          }
-          // persist per-floor
-          window.__changeState.elevatorPerFloor[floor] = {
-            type: "増加",
-            floors: num,
-            // direction selection intentionally not exposed in modal; default to 上
-            direction: direction || "上",
-          };
-        } else if (effect === "意味反転") {
-          // Toggle meaning inversion: if already inverted, remove to restore original
-          const existing = window.__changeState.elevatorPerFloor[floor];
-          if (existing && existing.type === "反転") {
-            // remove inversion to return to original
-            try {
-              delete window.__changeState.elevatorPerFloor[floor];
-            } catch (e) {}
-          } else {
-            window.__changeState.elevatorPerFloor[floor] = {
-              type: "反転",
-            };
-          }
-        } else {
-          invalid();
-          return;
-        }
-        // update magic description for elevator to reflect per-floor changes
-        try {
-          // keep an original copy to allow safe replacements
-          window.__originalAllInfo =
-            window.__originalAllInfo || JSON.parse(JSON.stringify(allInfo));
-          const changes = window.__changeState.elevatorPerFloor || {};
-          // pick the most recent config if any
-          const cfg = changes[Object.keys(changes).slice(-1)[0]] || null;
-          // base text comes from the original copy to avoid cumulative replacements
-          let base =
-            (window.__originalAllInfo &&
-              window.__originalAllInfo.box_1f &&
-              window.__originalAllInfo.box_1f.content) ||
-            (allInfo && allInfo.box_1f && allInfo.box_1f.content) ||
-            "";
-          // Some earlier runs left literal '\\n' sequences in the string. Convert them to real newlines
-          if (typeof base === "string") base = base.replace(/\\n/g, "\n");
-          let newContent = base;
-          if (cfg) {
-            if (cfg.type === "増加") {
-              // determine number and direction
-              const num = cfg.floors || cfg.amount || 1;
-              const dir = cfg.direction || "上";
-              // Prefer targeted replacement of the '1つ上' phrase if present
-              if (/1つ[上下]/.test(base)) {
-                newContent = base.replace(/1つ[上下]/g, `${num}つ${dir}`);
-              } else {
-                // fallback to replacing the whole clause
-                newContent = base.replace(
-                  /唱えることで[\s\S]*?移動する。/,
-                  `唱えることで${num}つ${dir}の階の同じ場所に移動する。`
-                );
-              }
-            } else if (cfg.type === "反転") {
-              // meaning inversion: flip 上 <-> 下 (prefer flipping the '1つ上' phrase)
-              if (typeof base === "string") {
-                if (/1つ上/.test(base)) {
-                  newContent = base.replace(/1つ上/, "1つ下");
-                } else if (/1つ下/.test(base)) {
-                  newContent = base.replace(/1つ下/, "1つ上");
-                } else {
-                  // fallback: flip the first 上 or 下 inside the elevator sentence
-                  const flipped = base.replace(
-                    /(唱えることで[\s\S]*?)(上|下)([\s\S]*?移動する。)/,
-                    (m, p1, p2, p3) => {
-                      const f = p2 === "上" ? "下" : "上";
-                      return `${p1}${f}${p3}`;
-                    }
-                  );
-                  newContent = flipped;
-                }
-              }
-              // Ensure '同じ' in the original elevator text is never turned into '違う'.
-              try {
-                const origElev =
-                  (window.__originalAllInfo &&
-                    window.__originalAllInfo.box_1f &&
-                    window.__originalAllInfo.box_1f.content) ||
-                  "";
-                if (
-                  typeof origElev === "string" &&
-                  origElev.includes("同じ") &&
-                  typeof newContent === "string"
-                ) {
-                  // restore '違う' back to '同じ' for elevator text to exclude 同じ/違う from inversion
-                  newContent = newContent
-                    .replace(/違う場所/g, "同じ場所")
-                    .replace(/違う/g, "同じ");
-                }
-              } catch (e) {}
-            }
-          }
-          if (allInfo && allInfo.box_1f) {
-            allInfo.box_1f.content = newContent;
-          }
-        } catch (e) {}
-      } else if (target === "ムーブ") {
-        // For ムーブ, only '意味反転' is applicable and it toggles: replace the first occurrence of '同じ' with '違う' when active
-        if (effect !== "意味反転") {
-          invalid();
-          return;
-        }
-        const existingMove =
-          window.__changeState.global && window.__changeState.global.move;
-        if (existingMove && existingMove.type === "反転") {
-          // remove inversion
-          try {
-            delete window.__changeState.global.move;
-            // restore original text if available
-            window.__originalAllInfo =
-              window.__originalAllInfo || JSON.parse(JSON.stringify(allInfo));
-            const orig =
-              (window.__originalAllInfo &&
-                window.__originalAllInfo.box_3f &&
-                window.__originalAllInfo.box_3f.content) ||
-              "";
-            if (allInfo && allInfo.box_3f) allInfo.box_3f.content = orig;
-          } catch (e) {}
-        } else {
-          // apply inversion
-          try {
-            window.__changeState.global.move = { type: "反転" };
-            window.__originalAllInfo =
-              window.__originalAllInfo || JSON.parse(JSON.stringify(allInfo));
-            const base3 =
-              (window.__originalAllInfo &&
-                window.__originalAllInfo.box_3f &&
-                window.__originalAllInfo.box_3f.content) ||
-              (allInfo && allInfo.box_3f && allInfo.box_3f.content) ||
-              "";
-            // perform single replacement of the word '同じ' -> '違う'
-            let new3;
-            if (typeof base3 === "string") {
-              // replace only the first occurrence
-              new3 = base3.replace(/同じ/, "違う");
-            } else {
-              new3 = base3;
-            }
-            if (allInfo && allInfo.box_3f) allInfo.box_3f.content = new3;
-          } catch (e) {}
-        }
-      } else if (target === "クッショ") {
-        // Special-case: クッショ supports only numeric +1 globally
-        if (effect !== "数字増加") {
-          invalid();
-          return;
-        }
-        const num = Number(amount || 1);
-        // only accept +1 as valid change
-        if (num !== 1) {
-          invalid();
-          return;
-        }
-        // persist globally
-        window.__changeState.global["クッショ"] = { type: "増加", amount: num };
-        // update info text for cushion: replace first occurrence of '3歩' with '4歩'
-        try {
-          window.__originalAllInfo =
-            window.__originalAllInfo || JSON.parse(JSON.stringify(allInfo));
-          const baseC =
-            (window.__originalAllInfo &&
-              window.__originalAllInfo.box_cushion &&
-              window.__originalAllInfo.box_cushion.content) ||
-            (allInfo && allInfo.box_cushion && allInfo.box_cushion.content) ||
-            "";
-          let newC = baseC;
-          if (typeof baseC === "string") {
-            newC = baseC.replace(/(\d+)歩/, (m, p1) => {
-              // increase by 1
-              const next = String(Number(p1) + num);
-              return `${next}歩`;
-            });
-          }
-          if (allInfo && allInfo.box_cushion)
-            allInfo.box_cushion.content = newC;
-        } catch (e) {}
-      } else {
-        // For other spells, accept numeric/meaning changes and save globally
-        if (effect === "数字増加") {
-          window.__changeState.global[target] = {
-            type: "増加",
-            amount: Number(amount || 1),
-          };
-        } else if (effect === "意味反転") {
-          window.__changeState.global[target] = { type: "反転" };
-        } else {
-          invalid();
-          return;
-        }
-        // try to update a generic info entry if exists
-        try {
-          const keyMap = { クッショ: "box_cushion", チェンジ: "box_change" };
-          const key = keyMap[target];
-          if (key && allInfo && allInfo[key]) {
-            allInfo[key].content =
-              allInfo[key].content + "\n(チェンジで編集済み)";
-          }
-        } catch (e) {}
-      }
-
-      // refresh magic list UI if open
-      try {
-        const list = document.getElementById("magic-list");
-        if (list && typeof renderMagicList === "function")
-          renderMagicList(list);
-        // if magic detail page is open and currently showing the affected magic, refresh it
-        try {
-          const magicPage2 = document.getElementById("magic-page-2");
-          const magicTitle = document.getElementById("magic-detail-title");
-          const contentEl = document.getElementById("magic-detail-content");
-          if (
-            magicPage2 &&
-            magicPage2.style.display !== "none" &&
-            magicTitle &&
-            contentEl
-          ) {
-            // map target labels to info keys
-            const map = {
-              エレベ: "box_1f",
-              ムーブ: "box_3f",
-              クッショ: "box_cushion",
-              チェンジ: "box_change",
-            };
-            const key = map[target];
-            if (
-              key &&
-              allInfo[key] &&
-              magicTitle.textContent === allInfo[key].title
-            ) {
-              // call showInfoDetail to re-render content
-              try {
-                showInfoDetail(key, magicTitle, contentEl);
-              } catch (e) {}
-            }
-          }
-        } catch (e) {}
-      } catch (e) {}
-
-      try {
-        showCustomAlert("チェンジを適用しました");
-      } catch (e) {
-        try {
-          window.alert("チェンジを適用しました");
-        } catch (e2) {}
       }
       modal.style.display = "none";
     });
