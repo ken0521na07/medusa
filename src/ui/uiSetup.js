@@ -21,6 +21,9 @@ import {
   START_FLOOR,
   playerState,
   allPuzzles,
+  STATUE_DISPLAY,
+  STATUE_BY_FLOOR,
+  STATUE_SYNC,
 } from "../core/constants.js";
 // import { startTimer as startTimerCore } from "./timer.js";
 import Player from "../entities/player.js";
@@ -324,39 +327,80 @@ export async function setupUI() {
       }
     } catch (e) {}
 
+    // --- restored: handle box_* pickups (box_1f, box_3f, box_cushion, box_change, box_medusa)
+    try {
+      const boxKeys = [
+        TILE.BOX_1F,
+        TILE.BOX_3F,
+        TILE.BOX_CUSHION,
+        TILE.BOX_CHANGE,
+        TILE.BOX_MEDUSA,
+      ];
+      if (
+        typeof currentTileType === "string" &&
+        boxKeys.includes(currentTileType)
+      ) {
+        const key = currentTileType;
+        const info = allInfo[key];
+        // ensure info entry exists and mark unlocked
+        if (info && !info.unlocked) info.unlocked = true;
+        // remove tile from map
+        try {
+          mapService.setTile(x, y, 0);
+        } catch (e) {}
+        // special handling: acquiring BOX_3F grants MOVE magic
+        try {
+          if (key === TILE.BOX_3F || key === "box_3f") {
+            // previously set playerState.gotMoveMagic = true; now rely on allInfo.box_3f.unlocked
+            // allInfo entry was marked unlocked above (info.unlocked = true)
+          }
+        } catch (e) {}
+        // refresh magic list UI if open
+        try {
+          const list = document.getElementById("magic-list");
+          if (list && typeof renderMagicList === "function")
+            renderMagicList(list);
+        } catch (e) {}
+        // show pickup alert
+        try {
+          const title = info && info.title ? info.title : "魔法";
+          showCustomAlert(title + "を手に入れた");
+        } catch (e) {
+          try {
+            window.alert(
+              (info && info.title ? info.title : "魔法") + "を手に入れた"
+            );
+          } catch (e2) {}
+        }
+        return;
+      }
+    } catch (e) {}
+
     switch (currentTileType) {
       case TILE.PUZZLE_3:
         // 3F の一括解放：1マス調べるだけで4つ全て解放される
-        // proceed to unlock via synchronous access to allPuzzles
+        // Do NOT open the puzzle modal automatically when A is pressed — only mark unlocked and show alert.
         try {
-          // perform changes directly on allPuzzles imported at module top
           const set = allPuzzles["elevator_3f"];
           if (set) {
             set.unlocked = true;
-            for (const p of set.pieces) {
-              p.unlocked = true;
-            }
+            for (const p of set.pieces) p.unlocked = true;
             // remove the tile from the map so it can't be obtained again
-            mapService.setTile(x, y, 0);
-            // show a generic pickup message for 3F
-            showCustomAlert(
-              "謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
-            );
-            // open puzzle modal to show the set
             try {
-              openPuzzleModal();
+              mapService.setTile(x, y, 0);
             } catch (e) {}
-            const puzzleGridTitle =
-              document.getElementById("puzzle-grid-title");
-            const puzzlePage1 = document.getElementById("puzzle-page-1");
-            const puzzlePage2 = document.getElementById("puzzle-page-2");
-            const puzzleGrid = document.getElementById("puzzle-grid");
-            if (puzzleGridTitle)
-              puzzleGridTitle.textContent = set.title || "謎|3F";
-            if (puzzlePage1) puzzlePage1.style.display = "none";
-            if (puzzlePage2) puzzlePage2.style.display = "flex";
-            if (typeof renderPuzzleGrid === "function")
-              renderPuzzleGrid(set, puzzleGrid);
+            // show only the custom alert — do NOT open the puzzle modal automatically
+            try {
+              showCustomAlert(
+                "謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
+              );
+            } catch (e) {
+              try {
+                window.alert(
+                  "謎を入手した。画面の【謎】ボタンから入手した謎を確認できます"
+                );
+              } catch (e2) {}
+            }
           }
         } catch (e) {
           console.error("failed to unlock 3F puzzles", e);
@@ -540,8 +584,11 @@ export async function setupUI() {
       if (isMoveSpell) {
         // The move spell (fox) may only be used on 3F at (9,5).
         if (floor === 3 && x === 9 && y === 5) {
-          if (!playerState.gotMoveMagic) {
+          if (!(allInfo && allInfo.box_3f && allInfo.box_3f.unlocked)) {
             const msg = "正しい魔法陣の上で唱えよう";
+            console.log(allInfo);
+            console.log(allInfo.box_3f);
+            console.log(allInfo.box_3f.unlocked);
             try {
               showCustomAlert(msg);
             } catch (e) {
@@ -872,112 +919,259 @@ function openMoveModal() {
     submit.addEventListener("click", () => {
       const name = (nameInput.value || "").trim();
       const dir = select.value;
-      // Validate: must be "ジェシー" and direction "北"
-      if (name !== "ジェシー") {
-        modal.style.display = "none";
-        showCustomAlert("入力が正しくないようだ");
-        return;
-      }
-      // find statue_j in statues list
-      const s = statues.find((st) => st.nameKey === "statue_j");
-      if (!s) {
+
+      // map input name to internal statue key
+      const nameKey = Object.keys(STATUE_DISPLAY).find(
+        (k) => STATUE_DISPLAY[k] === name
+      );
+      if (!nameKey) {
         modal.style.display = "none";
         showCustomAlert("その像は見つからないようだ");
         return;
       }
-      // direction vector
-      const dirMap = { 東: [1, 0], 西: [-1, 0], 南: [0, 1], 北: [0, -1] };
-      const vec = dirMap[dir];
-      if (!vec) {
-        modal.style.display = "none";
-        showCustomAlert("入力が正しくないようだ");
-        return;
-      }
-      const oldX = s.x;
-      const oldY = s.y;
-      const floor = s.floor;
 
-      // validate path up to 5 tiles: no wall or out-of-bounds allowed
-      const w = mapService.getWidth();
-      const h = mapService.getHeight();
-      let blocked = false;
-      let fell = false;
-      let targetX = oldX;
-      let targetY = oldY;
-      for (let step = 1; step <= 5; step++) {
-        const nx = oldX + vec[0] * step;
-        const ny = oldY + vec[1] * step;
-        // out of bounds -> blocked
-        if (nx < 0 || nx >= w || ny < 0 || ny >= h) {
-          blocked = true;
-          break;
-        }
-        const t = mapService.getTile(nx, ny, floor);
-        // wall blocks
-        if (t === TILE.WALL || t === 1) {
-          blocked = true;
-          break;
-        }
-        // hole: statue falls to floor-1 at this x,y
-        if (t === TILE.HOLE || t === "hole") {
-          targetX = nx;
-          targetY = ny;
-          fell = true;
-          break;
-        }
-        // otherwise, continue; if reached final step without obstacle, that's target
-        if (step === 5) {
-          targetX = nx;
-          targetY = ny;
-        }
-      }
-
-      if (blocked) {
+      // find all statue instances matching this nameKey
+      const targets = statues.filter((st) => st.nameKey === nameKey);
+      if (!targets || targets.length === 0) {
         modal.style.display = "none";
-        showCustomAlert("入力が正しくないようだ");
+        showCustomAlert("その像は見つからないようだ");
         return;
       }
 
-      if (fell) {
-        // statue falls to lower floor
-        const newFloor = Math.max(1, floor - 1);
-        // update map: clear old pos on current floor
+      // helper to get direction vector for a given floor (accounts for orientation)
+      const getVecForFloor = (d, floor) => {
+        // default: screen-up is north
+        if (floor === 5) {
+          // screen left is north (up is east)
+          // 北: left, 東: up, 南: right, 西: down
+          if (d === "北") return [-1, 0];
+          if (d === "東") return [0, -1];
+          if (d === "南") return [1, 0];
+          if (d === "西") return [0, 1];
+        } else {
+          // floors 3,4,6 and most others: up is north
+          if (d === "北") return [0, -1];
+          if (d === "東") return [1, 0];
+          if (d === "南") return [0, 1];
+          if (d === "西") return [-1, 0];
+        }
+        return null;
+      };
+
+      // special-case: statue_m moves together between 6F and 2F
+      const handleStatueM = () => {
+        // find both instances (2F and 6F)
+        const s2 = statues.find(
+          (st) => st.nameKey === "statue_m" && st.floor === 2
+        );
+        const s6 = statues.find(
+          (st) => st.nameKey === "statue_m" && st.floor === 6
+        );
+        // require north when either instance exists (2F can only move north)
+        if (dir !== "北") {
+          modal.style.display = "none";
+          showCustomAlert("その像は北にしか動かせないようだ");
+          return false;
+        }
+
+        // If 2F instance exists, move it using special mapping to (3,2)
+        if (s2) {
+          // validate there is indeed an instance at expected origin
+          if (s2.x !== 7 || s2.y !== 5) {
+            modal.style.display = "none";
+            showCustomAlert("その像は動かせないようだ");
+            return false;
+          }
+          try {
+            mapService.setTile(s2.x, s2.y, 0, s2.floor);
+            mapService.setTile(3, 2, "statue_m", 2);
+            s2.x = 3;
+            s2.y = 2;
+            s2.obj.gridX = 3;
+            s2.obj.gridY = 2;
+            s2.obj.updatePixelPosition();
+          } catch (e) {}
+        }
+
+        // If 6F instance exists, move it north up to 5 tiles (or fall)
+        if (s6) {
+          const vec6 = getVecForFloor("北", 6);
+          const oldX6 = s6.x;
+          const oldY6 = s6.y;
+          const w = mapService.getWidth();
+          const h = mapService.getHeight();
+          let blocked6 = false;
+          let fell6 = false;
+          let targetX6 = oldX6;
+          let targetY6 = oldY6;
+          for (let step = 1; step <= 5; step++) {
+            const nx = oldX6 + vec6[0] * step;
+            const ny = oldY6 + vec6[1] * step;
+            if (nx < 0 || nx >= w || ny < 0 || ny >= h) {
+              blocked6 = true;
+              break;
+            }
+            const t = mapService.getTile(nx, ny, 6);
+            if (t === TILE.WALL || t === 1) {
+              blocked6 = true;
+              break;
+            }
+            if (t === TILE.HOLE || t === "hole") {
+              targetX6 = nx;
+              targetY6 = ny;
+              fell6 = true;
+              break;
+            }
+            if (step === 5) {
+              targetX6 = nx;
+              targetY6 = ny;
+            }
+          }
+          if (!blocked6) {
+            if (fell6) {
+              const newFloor6 = Math.max(1, 6 - 1);
+              try {
+                mapService.setTile(oldX6, oldY6, 0, 6);
+                mapService.setTile(targetX6, targetY6, "statue_m", newFloor6);
+                s6.x = targetX6;
+                s6.y = targetY6;
+                s6.floor = newFloor6;
+                s6.obj.gridX = targetX6;
+                s6.obj.gridY = targetY6;
+                s6.obj.sprite.visible = s6.floor === mapService.getFloor();
+                s6.obj.updatePixelPosition();
+              } catch (e) {}
+            } else {
+              try {
+                mapService.setTile(oldX6, oldY6, 0, 6);
+                mapService.setTile(targetX6, targetY6, "statue_m", 6);
+                s6.x = targetX6;
+                s6.y = targetY6;
+                s6.obj.gridX = targetX6;
+                s6.obj.gridY = targetY6;
+                s6.obj.updatePixelPosition();
+              } catch (e) {}
+            }
+          }
+        }
+        return true;
+      };
+
+      // generic handler for non-synced statues (or synced ones from non-special floors)
+      const handleGeneric = (st) => {
+        const vec = getVecForFloor(dir, st.floor);
+        if (!vec) {
+          modal.style.display = "none";
+          showCustomAlert("入力が正しくないようだ");
+          return false;
+        }
+        const oldX = st.x;
+        const oldY = st.y;
+        const floor = st.floor;
+
+        // validate path up to 5 tiles: no wall or out-of-bounds allowed
+        const w = mapService.getWidth();
+        const h = mapService.getHeight();
+        let blocked = false;
+        let fell = false;
+        let targetX = oldX;
+        let targetY = oldY;
+        for (let step = 1; step <= 5; step++) {
+          const nx = oldX + vec[0] * step;
+          const ny = oldY + vec[1] * step;
+          // out of bounds -> blocked
+          if (nx < 0 || nx >= w || ny < 0 || ny >= h) {
+            blocked = true;
+            break;
+          }
+          const t = mapService.getTile(nx, ny, floor);
+          // wall blocks
+          if (t === TILE.WALL || t === 1) {
+            blocked = true;
+            break;
+          }
+          // hole: statue falls to floor-1 at this x,y
+          if (t === TILE.HOLE || t === "hole") {
+            targetX = nx;
+            targetY = ny;
+            fell = true;
+            break;
+          }
+          // otherwise, continue; if reached final step without obstacle, that's target
+          if (step === 5) {
+            targetX = nx;
+            targetY = ny;
+          }
+        }
+
+        if (blocked) {
+          modal.style.display = "none";
+          showCustomAlert("入力が正しくないようだ");
+          return false;
+        }
+
+        if (fell) {
+          // statue falls to lower floor
+          const newFloor = Math.max(1, floor - 1);
+          // update map: clear old pos on current floor
+          try {
+            mapService.setTile(oldX, oldY, 0, floor);
+          } catch (e) {}
+          // place statue on lower floor at same x,y
+          try {
+            mapService.setTile(targetX, targetY, st.nameKey, newFloor);
+          } catch (e) {}
+          // update statue record
+          st.x = targetX;
+          st.y = targetY;
+          st.floor = newFloor;
+          try {
+            st.obj.gridX = targetX;
+            st.obj.gridY = targetY;
+            // sprite visibility may need toggling depending on current viewed floor
+            st.obj.sprite.visible = st.floor === mapService.getFloor();
+            st.obj.updatePixelPosition();
+          } catch (e) {}
+          showCustomAlert("像が穴に落ちて下の階に落下した。");
+          return true;
+        }
+
+        // normal move to targetX,targetY on same floor
         try {
           mapService.setTile(oldX, oldY, 0, floor);
+          mapService.setTile(targetX, targetY, st.nameKey, floor);
         } catch (e) {}
-        // place statue on lower floor at same x,y
+        st.x = targetX;
+        st.y = targetY;
         try {
-          mapService.setTile(targetX, targetY, TILE.STATUE_J, newFloor);
+          st.obj.gridX = targetX;
+          st.obj.gridY = targetY;
+          st.obj.updatePixelPosition();
         } catch (e) {}
-        // update statue record
-        s.x = targetX;
-        s.y = targetY;
-        s.floor = newFloor;
-        try {
-          s.obj.gridX = targetX;
-          s.obj.gridY = targetY;
-          // sprite visibility may need toggling depending on current viewed floor
-          s.obj.sprite.visible = s.floor === mapService.getFloor();
-          s.obj.updatePixelPosition();
-        } catch (e) {}
-        showCustomAlert("像が穴に落ちて下の階に落下した。");
-        modal.style.display = "none";
-        return;
+
+        return true;
+      };
+
+      // Execute movement depending on statue type
+      let movedOK = true;
+      if (nameKey === "statue_m") {
+        movedOK = handleStatueM();
+      } else {
+        // apply generic handler to all matching instances (typically one)
+        for (const st of targets) {
+          const res = handleGeneric(st);
+          if (!res) {
+            movedOK = false;
+            break;
+          }
+        }
       }
 
-      // normal move to targetX,targetY on same floor
-      try {
-        mapService.setTile(oldX, oldY, 0, floor);
-        mapService.setTile(targetX, targetY, TILE.STATUE_J, floor);
-      } catch (e) {}
-      s.x = targetX;
-      s.y = targetY;
-      try {
-        s.obj.gridX = targetX;
-        s.obj.gridY = targetY;
-        s.obj.updatePixelPosition();
-      } catch (e) {}
-      showCustomAlert("「ムーブ」を唱え、像を移動した。");
+      // Jesse special-case removed: no longer need to kill the snake at (1,0)
+
+      if (movedOK) {
+        showCustomAlert("「ムーブ」を唱え、像を移動した。");
+      }
       modal.style.display = "none";
     });
   } else {

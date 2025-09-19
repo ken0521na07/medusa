@@ -88,15 +88,15 @@ const MAP_2F = [
 // 3F の仮マップ（蛇が往復するエリアを含める）
 const MAP_3F = [
   ["snake", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  ["snake", 0, 0, 1, 0, 0, 0, 0, 0, 1, 0],
+  ["snake", 0, "snake", 0, 0, 0, 0, 0, 0, 1, 0],
   ["snake", 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
-  ["snake", 0, 0, 0, 1, "info_snake_g", 0, "snake_bounce", 1, "box_3f", 0],
-  ["snake", 0, 0, 0, 1, 0, 0, "snake_bounce", 1, 0, 0],
-  [0, "statue_j", 0, "puzzle_3", 1, 0, 0, "snake_bounce", 1, "move", 0],
+  [1, 0, 0, "puzzle_3", 1, "info_snake_g", 0, "snake_bounce", 1, "box_3f", 0],
+  ["snake", 0, 0, 1, 1, 0, 0, "snake_bounce", 1, 0, 0],
+  ["snake", "statue_j", 0, 0, 0, 0, 1, "snake_bounce", 1, "move", 0],
   ["snake", 0, 0, 0, 1, 0, 0, "snake_bounce", 1, 0, 0],
   ["snake", 0, 0, 0, 1, "info_statue", 0, "snake_bounce_start", 1, 0, 0],
-  ["snake", 0, 0, 1, 0, 0, 0, "snake_bounce", 1, 0, "snake_bounce"],
-  ["snake", 0, 1, 0, 0, 0, 0, 0, 0, 0, "snake_bounce_start"],
+  ["snake", 0, 0, 0, 1, 0, 0, "snake_bounce", 1, 0, "snake_bounce"],
+  ["snake", 0, 0, 0, 1, 0, 0, 0, 0, 0, "snake_bounce_start"],
   ["snake", 0, 0, 0, 0, "change", 0, 1, 0, 0, "snake_bounce"],
 ];
 
@@ -373,6 +373,29 @@ export const allInfo = {
       "石像には名前がついている。人の力では動かすことができない。石像が移動する際、経路に蛇が居ると轢き殺す。また、石像越しで蛇を見ても石化は起こらない。",
     unlocked: false,
   },
+
+  // 5F 情報タイル: 画像として扱う
+  info_5_1: {
+    title: "5階の情報1",
+    content: "img/info5_1.png",
+    unlocked: false,
+  },
+  info_5_2: {
+    title: "5階の情報2",
+    content: "img/info5_2.png",
+    unlocked: false,
+  },
+  info_5_3: {
+    title: "5階の情報3",
+    content: "img/info5_3.png",
+    unlocked: false,
+  },
+  info_5_4: {
+    title: "5階の情報4",
+    content: "img/info5_4.png",
+    unlocked: false,
+  },
+
   box_1f: {
     title: "エレベ",
     content:
@@ -655,6 +678,28 @@ export const SNAKE_DEFS = {
   ],
 };
 
+// Statue metadata: display names and per-floor lists. Also indicate that
+// the "statue_m" (マイク) instances on 6F and 2F move together.
+export const STATUE_DISPLAY = {
+  statue_m: "マイク",
+  statue_f: "フランクリン",
+  statue_nomove: "不動",
+  statue_j: "ジェシー",
+};
+
+export const STATUE_BY_FLOOR = {
+  6: ["statue_m"],
+  5: ["statue_f", "statue_nomove"],
+  3: ["statue_j"],
+  2: ["statue_m"],
+};
+
+// statues that are linked and should move together (both floors will be
+// updated when one is moved)
+export const STATUE_SYNC = {
+  statue_m: [2, 6],
+};
+
 export const START_POS_X = 5;
 export const START_POS_Y = 5; // changed from 10 to 5 to start at y=5
-export const START_FLOOR = 2; // start on 1F by default
+export const START_FLOOR = 3; // start on 1F by default
