@@ -273,7 +273,8 @@ function _applyFallenStatueEffects(st, destX, destY, destFloor) {
                       if (origTex) st.obj.sprite.texture = origTex;
                     } catch (e) {}
                     try {
-                      st.obj.sprite.visible = st.floor === mapService.getFloor();
+                      st.obj.sprite.visible =
+                        st.floor === mapService.getFloor();
                       st.obj.updatePixelPosition();
                     } catch (e) {}
                   }
@@ -281,10 +282,13 @@ function _applyFallenStatueEffects(st, destX, destY, destFloor) {
                   if (st.obj) st.obj.broken = false;
                   st.removed = false;
                   try {
-                    console.log("[statue] reset after crushing death (onClose)", {
-                      nameKey: st.nameKey,
-                      to: { x: st.x, y: st.y, floor: st.floor },
-                    });
+                    console.log(
+                      "[statue] reset after crushing death (onClose)",
+                      {
+                        nameKey: st.nameKey,
+                        to: { x: st.x, y: st.y, floor: st.floor },
+                      }
+                    );
                   } catch (e) {}
                 } catch (e) {}
               }
@@ -294,13 +298,17 @@ function _applyFallenStatueEffects(st, destX, destY, destFloor) {
           if (typeof requestAnimationFrame === "function") {
             requestAnimationFrame(() => {
               try {
-                p.triggerFall("像の落下で轢かれてしまった...", { onClose: resetMovedStatue });
+                p.triggerFall("像の落下で轢かれてしまった...", {
+                  onClose: resetMovedStatue,
+                });
               } catch (err) {
                 console.error("triggerFall failed on player", err);
               }
             });
           } else {
-            p.triggerFall("像の落下で轢かれてしまった...", { onClose: resetMovedStatue });
+            p.triggerFall("像の落下で轢かれてしまった...", {
+              onClose: resetMovedStatue,
+            });
           }
         }
       }
