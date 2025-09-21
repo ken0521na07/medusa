@@ -6,6 +6,14 @@ import { showCustomAlert } from "../ui/modals.js";
 // Note: this module reuses global objects (allInfo, showCustomAlert, renderMagicList, showInfoDetail, etc.)
 // to keep parity with previous implementation in uiSetup.js. It exposes openChangeModal().
 export function openChangeModal() {
+  // Require Change magic unlocked (box_change) before showing modal
+  try {
+    if (!(allInfo && allInfo.box_change && allInfo.box_change.unlocked)) {
+      // silently ignore when not unlocked
+      return;
+    }
+  } catch (e) {}
+
   let modal = document.getElementById("change-modal");
   if (!modal) {
     modal = document.createElement("div");

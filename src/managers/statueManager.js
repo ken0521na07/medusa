@@ -524,6 +524,28 @@ export function handleMoveByDisplayName(displayName, dir) {
   if (!targets || targets.length === 0)
     return { ok: false, msg: "その像は見つからないようだ" };
 
+  // Restrict 'ジェシー' to only move 北. If any other direction is attempted,
+  // silently reject with the requested message.
+  try {
+    const normInput =
+      displayName && displayName.normalize
+        ? displayName.normalize("NFKC").trim()
+        : (displayName || "").trim();
+    let isJessie = false;
+    if (normInput === "ジェシー") isJessie = true;
+    try {
+      const disp = STATUE_DISPLAY && STATUE_DISPLAY[nameKey];
+      const normDisp =
+        disp && disp.normalize
+          ? disp.normalize("NFKC").trim()
+          : (disp || "").trim();
+      if (normDisp === "ジェシー") isJessie = true;
+    } catch (e) {}
+    if (isJessie && dir !== "北") {
+      return { ok: false, msg: "それをする必要はないようだ" };
+    }
+  } catch (e) {}
+
   // Enforce ムーブ option from チェンジ (同じ/違う) if present. This only
   // affects which statues may be specified by the player. For the special
   // statue_m case we validate availability but keep the existing behavior of

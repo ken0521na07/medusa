@@ -1783,7 +1783,7 @@ function openMoveModal() {
         // require north when either instance exists (2F can only move north)
         if (dir !== "北") {
           modal.style.display = "none";
-          showCustomAlert("その像は北にしか動かせないようだ");
+          showCustomAlert("その方向には動かせないようだ。");
           return false;
         }
 
