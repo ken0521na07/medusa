@@ -1,5 +1,5 @@
 import { allPuzzles } from "../core/constants.js";
-import { setTile } from "./mapService.js";
+import { setTile, getTile, getWidth, getHeight } from "./mapService.js";
 import { openPuzzleModal, showCustomAlert } from "../ui/modals.js";
 import { emit } from "../core/eventBus.js";
 
@@ -486,6 +486,36 @@ export function deserialize(payload) {
         }
       }
     }
+
+    // Ensure any puzzle tiles for already-unlocked pieces are removed from the map
+    try {
+      const unlockedPieceIds = new Set();
+      for (const sid of Object.keys(allPuzzles)) {
+        const s = allPuzzles[sid];
+        if (!s || !Array.isArray(s.pieces)) continue;
+        for (const p of s.pieces) {
+          if (p && p.unlocked) unlockedPieceIds.add(String(p.id));
+        }
+      }
+      const w = typeof getWidth === "function" ? getWidth() : 11;
+      const h = typeof getHeight === "function" ? getHeight() : 11;
+      for (let f = 0; f <= 6; f++) {
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            try {
+              const t = typeof getTile === "function" ? getTile(x, y, f) : null;
+              if (t && unlockedPieceIds.has(String(t))) {
+                setTile(x, y, 0, f);
+              }
+            } catch (e) {}
+          }
+        }
+      }
+      // refresh overlays/UI
+      try {
+        emit && typeof emit === "function" && emit("puzzleChanged");
+      } catch (e) {}
+    } catch (e) {}
   } catch (e) {
     console.error("puzzleManager.deserialize failed", e);
   }
