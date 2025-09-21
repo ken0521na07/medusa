@@ -16,6 +16,7 @@ export const TILE = {
   INFO_5_3: "info_5_3",
   INFO_5_4: "info_5_4",
   INFO_MEDUSA: "info_medusa",
+  INFO_TORCH: "info_torch",
   HOLE: "hole",
   SNAKE: "snake",
   SNAKE_BOUNCE: "snake_bounce",
@@ -28,7 +29,6 @@ export const TILE = {
   BOX_3F: "box_3f",
   BOX_CUSHION: "box_cushion",
   BOX_CHANGE: "box_change",
-  BOX_MEDUSA: "box_medusa",
   PUZZLE_1H: "puzzle_1h",
   PUZZLE_1S: "puzzle_1s",
   PUZZLE_1C: "puzzle_1c",
@@ -52,13 +52,14 @@ export const TILE = {
   CHANGE: "change",
   CUSHON: "cushion",
   MEDUSA: "medusa",
+  TORCH_CORRECT: "torch_correct",
 };
 
 // --- フロア別マップ定義 ---
 // 1F のマップ（既存）
 const MAP_1F = [
   /*y=0*/ [0, "hole", 0, 0, 0, "box_1f", 0, 0, 0, 0, 0],
-  /*y=1*/ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  /*y=1*/ [0, 0, 0, 0, 0, 0, 0, 0, "torch_correct", 0, 0],
   /*y=2*/ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   /*y=3*/ [0, 0, 0, 0, 0, 0, 0, 0, "hole", 0, 0],
   /*y=4*/ [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, "hole"],
@@ -74,7 +75,7 @@ const MAP_1F = [
 const MAP_2F = [
   ["puzzle_2s", 0, 0, 0, 0, 0, 0, 0, "snake", 0, "puzzle_2d"],
   [0, 0, 0, "snake", 0, 0, 0, 0, 0, 0, 0],
-  [0, 0, 0, "hole", 0, "info_snake", 0, 0, 0, "snake", 0],
+  [0, "torch_correct", 0, "hole", 0, "info_snake", 0, 0, 0, "snake", 0],
   [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   ["snake", 0, 0, 0, 0, 0, 0, "snake", 0, 1, 0],
   [0, 0, "hole", 0, 0, "elev", "snake", "statue_m", "snake", 0, 0],
@@ -87,7 +88,7 @@ const MAP_2F = [
 
 // 3F の仮マップ（蛇が往復するエリアを含める）
 const MAP_3F = [
-  ["snake", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  ["snake", 0, 0, 0, 0, "torch_correct", 0, 0, 0, 0, 0],
   ["snake", 0, "snake", 0, 0, 0, 0, 0, 0, 1, 0],
   ["snake", 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
   [1, 0, 0, "puzzle_3", 1, "info_snake_g", 0, "snake_bounce", 1, "box_3f", 0],
@@ -103,7 +104,7 @@ const MAP_3F = [
 // 4F の仮マップ（時計回りの snake_clock サンプルを設置）
 
 const MAP_4F = [
-  [0, 0, 0, "cushion", 0, 0, 0, "hole", 0, 0, 0],
+  [0, 0, 0, "cushion", 0, "torch_correct", 0, "hole", 0, 0, 0],
   [0, 0, "puzzle_4d", 1, 1, 1, 1, 1, 0, 0, 0],
   [
     0,
@@ -207,7 +208,7 @@ const MAP_5F = [
   [0, 0, 0, 0, 0, 0, 0, 0, 0, "info_5_2", 0],
   [0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1],
   [0, 1, "puzzle_5", 0, 0, "statue_f", 0, 0, 0, 0, "hole"],
-  [0, 1, 0, 0, 0, "elev", 0, 0, 0, 0, 0],
+  ["torch_correct", 1, 0, 0, 0, "elev", 0, 0, 0, 0, 0],
   [0, 1, "change", 0, 0, 0, 0, 0, 0, 0, 0],
   [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1],
   [0, "info_5_3", 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -219,7 +220,7 @@ const MAP_5F = [
 const MAP_6F = [
   [0, "hole", 0, 1, 0, "medusa", 0, 1, 0, "hole", 0],
   [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
-  [0, 0, 0, 1, "snake", "snake", "snake", 1, 0, 0, "box_medusa"],
+  [0, 0, 0, 1, "snake", "snake", "snake", 1, 0, 0, "info_torch"],
   [0, "cushion", 0, 1, 0, 0, 0, 1, 0, 0, 0],
   [0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0],
   [1, 0, 1, 1, 0, 0, 0, 1, 1, "statue_m", 1],
@@ -235,7 +236,7 @@ const MAP_B1F = [
   // y=0
   [0, 0, "puzzle_b1", 0, 0, 0, 0, 0, 0, 0, "snake"],
   // y=1
-  [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 1, 0, "torch_correct", 0, 0],
   // y=2
   [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
   // y=3
@@ -373,6 +374,11 @@ export const allInfo = {
       "石像には名前がついている。人の力では動かすことができない。石像が移動する際、経路に蛇が居ると轢き殺す。また、石像越しで蛇を見ても石化は起こらない。",
     unlocked: false,
   },
+  info_medusa: {
+    title: "6Fの宝箱の情報",
+    content: "メデューサを倒すための情報は、6Fの宝箱の中にある",
+    unlocked: false,
+  },
 
   // 5F 情報タイル: 画像として扱う
   info_5_1: {
@@ -396,29 +402,37 @@ export const allInfo = {
     unlocked: false,
   },
 
+  // 6F: メデューサ情報 + 松明タイル
+  info_torch: {
+    title: "メデューサの情報",
+    content:
+      "メデューサは蛇と同様に見ると石化してしまう。ただし、6階の下にある6つの階の、メデューサの真下の位置に6本の松明を設置することで、石化を無効化することができる。",
+    unlocked: false,
+  },
+
   box_1f: {
     title: "エレベ",
     content:
       "各階に指定された「エレベの呪文」を草の正しい魔法陣の上で唱えることで1つ上の階の同じ場所に移動する。",
-    unlocked: true,
+    unlocked: false,
   },
   box_3f: {
     title: "ムーブ",
     content:
       "花の魔法陣で「ムーブの呪文」を唱え、呪文を唱えた階と同じ階にある石像の名前と、東西南北いずれかの方角を指定する。指定した方角へ、その名前の石像が5m移動する。同じ石像は1度しか動かせない。また、移動経路に壁がある場合は動かすことができない。移動経路に穴がある場合、像は真下に落下して壊れる。",
-    unlocked: true,
+    unlocked: false,
   },
   box_cushion: {
     title: "クッショ",
     content:
       "水の正しい魔法陣の上で「クッショの呪文」を唱える。魔法陣から3歩移動する間に穴に落ちた場合、無事に真下に落ちることができる。",
-    unlocked: true,
+    unlocked: false,
   },
   box_change: {
     title: "チェンジ",
     content:
       "火の正しい魔法陣の上で魔法を1つ指定し、指定した魔法の効果を編集したものを使用することができるようにする。編集できるのは効果の赤い文字であり、「数字を大きくする」「意味を逆にする」の2つの効果のうちどちらか、あるいは両方の効果を与えることができる。ただし、それぞれの呪文を求めるのに使用した謎に含まれる赤い文字にも同様の変化が発生し、チェンジを行った魔法を使う場合は変化後の呪文を唱える必要がある。チェンジの効果は、チェンジを使用した階で永続的に機能する。また、呪文は全て一般的な言葉になり、言葉にならない場合は使用できない。",
-    unlocked: true,
+    unlocked: false,
   },
 };
 
@@ -426,6 +440,12 @@ export const allInfo = {
 // the player obtained the MOVE magic from BOX_3F)
 export const playerState = {
   gotMoveMagic: false,
+  // number of torches the player holds (松明)
+  torchCount: 0,
+  // whether medusa's gaze is disabled (after placing all torches and warping)
+  medusaDefeated: false,
+  // whether player has ever obtained torches (info_torch)
+  gotTorches: false,
 };
 
 export const allPuzzles = {

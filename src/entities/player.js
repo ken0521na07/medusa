@@ -4,6 +4,7 @@ import {
   START_POS_Y,
   START_FLOOR,
   TILE,
+  playerState, // import playerState to check medusa state
 } from "../core/constants.js";
 import { showCustomAlert } from "../ui/modals.js";
 import { emit } from "../core/eventBus.js";
@@ -92,6 +93,20 @@ export default class Player extends GameObject {
       if (snakeManager.getSnakeAt(this.gridX, this.gridY, this.floor))
         return true;
     } catch (e) {}
+    // If medusa is on the player's own tile and medusa still active, treat as seen
+    try {
+      const myTile = this.mapService.getTile(
+        this.gridX,
+        this.gridY,
+        this.floor
+      );
+      if (
+        (myTile === TILE.MEDUSA || myTile === "medusa") &&
+        !(playerState && playerState.medusaDefeated)
+      ) {
+        return true;
+      }
+    } catch (e) {}
     const dirMap = {
       down: [0, 1],
       up: [0, -1],
@@ -116,6 +131,12 @@ export default class Player extends GameObject {
       if (typeof t === "string" && t.startsWith("statue")) return false;
       // stop if a statue constant is used
       if (t === TILE.STATUE_J) return false;
+      // medusa tile: if present and not disabled, treat as lethal (like snake)
+      if (
+        (t === TILE.MEDUSA || t === "medusa") &&
+        !(playerState && playerState.medusaDefeated)
+      )
+        return true;
       // check dynamic snake entity as well (only after blockers checked)
       try {
         if (snakeManager.getSnakeAt(x, y, this.floor)) return true;
@@ -244,16 +265,35 @@ export default class Player extends GameObject {
 
     const targetTile = this.mapService.getTile(newX, newY, this.floor);
 
-    // treat statue_* tiles as walls (impassable) unless moved by magic
-    if (typeof targetTile === "string" && targetTile.startsWith("statue_")) {
-      // face the statue but do not move into it
-      this.direction = intendedDirection;
-      this.animationFrame = 0;
-      this.sprite.texture = this.textures[this.direction][this.animationFrame];
-      try {
-        this._suppressUntil = Date.now() + 300;
-      } catch (e) {}
-      return;
+    // handle medusa tile similarly to other special tiles inside the switch
+    switch (targetTile) {
+      case TILE.MEDUSA:
+      case "medusa":
+        // If medusa already defeated, block movement (impassable like a wall)
+        try {
+          if (playerState && playerState.medusaDefeated) {
+            // face the medusa tile but do not move into it
+            this.direction = intendedDirection;
+            this.animationFrame = 0;
+            this.sprite.texture =
+              this.textures[this.direction][this.animationFrame];
+            try {
+              this._suppressUntil = Date.now() + 300;
+            } catch (e) {}
+            return;
+          }
+        } catch (e) {}
+
+        // Medusa is alive: stepping onto it petrifies the player (like seeing a snake)
+        this.direction = intendedDirection;
+        this.animationFrame = 0;
+        this.sprite.texture =
+          this.textures[this.direction][this.animationFrame];
+        try {
+          this._suppressUntil = Date.now() + 300;
+        } catch (e) {}
+        this.triggerFall("メドゥーサを見て石化してしまった...！");
+        return;
     }
 
     switch (targetTile) {
@@ -381,5 +421,48 @@ export default class Player extends GameObject {
 
         return;
     }
+  }
+
+  // Serialize minimal player runtime state for saving
+  serialize() {
+    try {
+      return {
+        x: this.gridX,
+        y: this.gridY,
+        floor: this.floor,
+        direction: this.direction,
+        startPositions: this.startPositions || {},
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Restore player runtime state from saved object
+  deserialize(obj) {
+    try {
+      if (!obj) return;
+      if (typeof obj.x === "number" && typeof obj.y === "number") {
+        this.gridX = obj.x;
+        this.gridY = obj.y;
+      }
+      if (typeof obj.floor === "number") this.floor = obj.floor;
+      if (typeof obj.direction === "string") this.direction = obj.direction;
+      if (obj.startPositions && typeof obj.startPositions === "object")
+        this.startPositions = obj.startPositions;
+      // apply to sprite/pixel position
+      try {
+        this.mapService.setFloor(this.floor);
+      } catch (e) {}
+      this.updatePixelPosition();
+      this.sprite.texture =
+        this.textures[this.direction] && this.textures[this.direction][0]
+          ? this.textures[this.direction][0]
+          : this.sprite.texture;
+      // notify UI about floor change so background map can update
+      try {
+        emit("floorChanged", this.floor);
+      } catch (e) {}
+    } catch (e) {}
   }
 }

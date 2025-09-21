@@ -758,3 +758,123 @@ export function reset() {
   } catch (e) {}
   _appLayers = null;
 }
+
+export function serialize() {
+  try {
+    return statues.map((s) => ({
+      x: s.x,
+      y: s.y,
+      floor: s.floor,
+      nameKey: s.nameKey,
+      moved: !!s.moved,
+      removed: !!s.removed,
+      initialX: s.initialX,
+      initialY: s.initialY,
+      initialFloor: s.initialFloor,
+    }));
+  } catch (e) {
+    console.error("statueManager.serialize failed", e);
+    return null;
+  }
+}
+
+export function deserialize(arr) {
+  try {
+    if (!Array.isArray(arr)) return false;
+    // We will attempt to reconcile existing statues with saved positions.
+    for (const item of arr) {
+      try {
+        const found = statues.find(
+          (s) =>
+            s.nameKey === item.nameKey && s.initialFloor === item.initialFloor
+        );
+        if (found) {
+          // update model fields
+          found.x = typeof item.x === "number" ? item.x : found.x;
+          found.y = typeof item.y === "number" ? item.y : found.y;
+          found.floor =
+            typeof item.floor === "number" ? item.floor : found.floor;
+          found.moved = !!item.moved;
+          found.removed = !!item.removed;
+
+          // reconcile map tile and sprite according to removed/moved flags
+          try {
+            if (found.removed) {
+              // clear any tile at the statue's position and remove sprite
+              try {
+                mapService.setTile(found.x, found.y, 0, found.floor);
+              } catch (e) {}
+              try {
+                if (found.obj && found.obj.sprite) {
+                  if (
+                    found.obj.sprite.parent &&
+                    typeof found.obj.sprite.parent.removeChild === "function"
+                  ) {
+                    found.obj.sprite.parent.removeChild(found.obj.sprite);
+                  }
+                }
+              } catch (e) {}
+              // drop object reference so game treats it as removed
+              found.obj = null;
+            } else {
+              // ensure the map shows the statue at its saved position
+              try {
+                mapService.setTile(
+                  found.x,
+                  found.y,
+                  found.nameKey,
+                  found.floor
+                );
+              } catch (e) {}
+
+              // update GameObject if present
+              try {
+                if (found.obj) {
+                  found.obj.gridX = found.x;
+                  found.obj.gridY = found.y;
+                  // apply broken texture if statue was moved/broken
+                  try {
+                    if (found.moved) {
+                      const brokenTex = PIXI.Texture.from(
+                        "img/statue_broken.png"
+                      );
+                      if (brokenTex) found.obj.sprite.texture = brokenTex;
+                    } else {
+                      const origTex = PIXI.Texture.from(
+                        found.originalTexturePath || "img/statue.png"
+                      );
+                      if (origTex) found.obj.sprite.texture = origTex;
+                    }
+                  } catch (e) {}
+
+                  try {
+                    found.obj.updatePixelPosition();
+                    if (found.obj.sprite)
+                      found.obj.sprite.visible =
+                        found.floor === mapService.getFloor();
+                  } catch (e) {}
+
+                  // ensure sprite is attached to entity layer
+                  try {
+                    if (
+                      _appLayers &&
+                      _appLayers.entityLayer &&
+                      found.obj.sprite &&
+                      !found.obj.sprite.parent
+                    ) {
+                      _appLayers.entityLayer.addChild(found.obj.sprite);
+                    }
+                  } catch (e) {}
+                }
+              } catch (e) {}
+            }
+          } catch (e) {}
+        }
+      } catch (e) {}
+    }
+    return true;
+  } catch (e) {
+    console.error("statueManager.deserialize failed", e);
+    return false;
+  }
+}

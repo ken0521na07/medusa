@@ -291,303 +291,229 @@ export async function initSnakes(appLayers, { autoFromMap = true } = {}) {
         // defensive: ensure sprite size/alpha are correct
         try {
           s.sprite.sprite.width =
-            typeof PIXI !== "undefined" &&
-            PIXI.settings &&
-            typeof PIXI.settings.SCALE_MODE !== "undefined"
-              ? s.sprite.sprite.width
-              : s.sprite.sprite.width;
-        } catch (e) {}
-        try {
-          s.sprite.sprite.height = s.sprite.sprite.height;
-        } catch (e) {}
-        try {
-          s.sprite.sprite.alpha = 1;
-        } catch (e) {}
-        // ensure it is attached to the entity layer if layers are available
-        try {
-          if (_appLayers && _appLayers.entityLayer && !s.sprite.sprite.parent) {
-            _appLayers.entityLayer.addChild(s.sprite.sprite);
-            s.addedToLayer = true;
-          }
+            typeof PIXI !== "undefined" ? TILE_SIZE : s.sprite.sprite.width;
+          s.sprite.sprite.height =
+            typeof PIXI !== "undefined" ? TILE_SIZE : s.sprite.sprite.height;
+          s.sprite.sprite.alpha = 1.0;
         } catch (e) {}
       } catch (e) {}
     }
   } catch (e) {}
+  return;
+}
 
-  // ensure we toggle sprite visibility on floor change
+// register floor change listener to keep snake sprites in sync
+try {
+  if (_floorListener) off("floorChanged", _floorListener);
+} catch (e) {}
+_floorListener = () => {
   try {
-    if (_floorListener) off("floorChanged", _floorListener);
+    _ensureSpritesMatchMap();
   } catch (e) {}
-  _floorListener = (f) => {
-    try {
-      // synchronize all snake sprites with the current map/floor
-      _ensureSpritesMatchMap();
-      // additionally, remove sprites that are on other floors (defensive)
-      for (const s of snakes) {
-        try {
-          if (!s || !s.sprite || !s.sprite.sprite) continue;
-          if (f !== s.floor) {
-            if (s.addedToLayer && _appLayers && _appLayers.entityLayer) {
-              try {
-                _appLayers.entityLayer.removeChild(s.sprite.sprite);
-              } catch (e) {}
-              s.addedToLayer = false;
-            }
-            s.sprite.sprite.visible = false;
-          }
-        } catch (e) {}
-      }
-    } catch (e) {}
-  };
+};
+try {
   on("floorChanged", _floorListener);
-  // immediately sync sprite visibility with current floor
-  try {
-    _floorListener(mapService.getFloor());
-  } catch (e) {}
-}
+} catch (e) {}
 
-export function addSnake({ floor = 3, path = [], mode = "bounce" } = {}) {
-  if (!path || path.length === 0) return null;
-  const id = _nextId++;
-  const snakeDef = {
-    id,
-    floor,
-    path: path.map((p) => ({ x: p.x, y: p.y })),
-    index: 0,
-    // initialIndex records the spawn/starting index so resets return here
-    initialIndex: 0,
-    dir: -1, // for bounce: -1 start moving 'up' the array, 1 down; for loop: 1 moves forward
-    mode, // 'bounce' or 'loop' or 'static' (new)
-    sprite: null,
-    addedToLayer: false,
-  };
-  // apply provided startIndex if present
+// internal helper to add a snake definition to runtime
+function addSnake({ floor = 1, path = [], mode = "loop", startIndex = 0 }) {
   try {
-    if (
-      typeof arguments[0].startIndex === "number" &&
-      arguments[0].startIndex >= 0 &&
-      arguments[0].startIndex < snakeDef.path.length
-    ) {
-      snakeDef.index = arguments[0].startIndex;
-    }
-  } catch (e) {}
-  // record as initialIndex for future resets
-  try {
-    snakeDef.initialIndex = snakeDef.index || 0;
-  } catch (e) {}
-  // create GameObject for this snake
-  try {
-    snakeDef.sprite = makeGameObjectForSnake(snakeDef);
-    // ensure sprite uses the intended texture and dimensions (defensive)
+    if (!Array.isArray(path) || path.length === 0) return null;
+    const idx = Math.max(0, Math.min(startIndex || 0, path.length - 1));
+    const id = _nextId++;
+    const snake = {
+      id,
+      floor,
+      path: path.map((p) => ({ x: p.x, y: p.y })),
+      index: idx,
+      initialIndex: idx,
+      mode: mode || "loop",
+      dead: false,
+      sprite: null,
+      addedToLayer: false,
+    };
     try {
-      const imgPath =
-        snakeDef.mode === "static"
-          ? "img/snake_static.png"
-          : snakeDef.mode === "unclock"
-          ? "img/snake_red.png"
-          : "img/snake.png";
-      try {
-        // explicitly set texture to ensure PIXI resolves the cached texture
-        if (snakeDef.sprite && snakeDef.sprite.sprite) {
-          snakeDef.sprite.sprite.texture = PIXI.Texture.from(imgPath);
-          snakeDef.sprite.sprite.width =
-            typeof TILE_SIZE !== "undefined"
-              ? TILE_SIZE
-              : snakeDef.sprite.sprite.width;
-          snakeDef.sprite.sprite.height =
-            typeof TILE_SIZE !== "undefined"
-              ? TILE_SIZE
-              : snakeDef.sprite.sprite.height;
-          snakeDef.sprite.sprite.alpha = 1;
-        }
-      } catch (e) {}
-    } catch (e) {}
-    // add sprite to entity layer if layers are available; set visible according to floor
-    try {
-      if (
-        _appLayers &&
-        _appLayers.entityLayer &&
-        snakeDef.sprite &&
-        snakeDef.sprite.sprite
-      ) {
-        // avoid adding twice
-        if (!snakeDef.sprite.sprite.parent) {
-          _appLayers.entityLayer.addChild(snakeDef.sprite.sprite);
-        }
-        // ensure visibility matches the floor and the sprite is enabled
-        try {
-          snakeDef.sprite.sprite.visible = mapService.getFloor() === floor;
-        } catch (e) {
-          snakeDef.sprite.sprite.visible = true;
-        }
-        snakeDef.addedToLayer = true;
+      snake.sprite = makeGameObjectForSnake(snake);
+      if (snake.sprite && snake.sprite.sprite) {
+        snake.sprite.sprite.visible = snake.floor === mapService.getFloor();
+        if (_appLayers && _appLayers.entityLayer)
+          _appLayers.entityLayer.addChild(snake.sprite.sprite);
+        snake.addedToLayer = true;
       }
     } catch (e) {}
-  } catch (e) {}
-  snakes.push(snakeDef);
-  try {
-    // expose for debugging
-    window.__snakes = snakes;
-  } catch (e) {}
-  return id;
-}
-
-export function removeSnake(id) {
-  const idx = snakes.findIndex((s) => s.id === id);
-  if (idx === -1) return false;
-  const s = snakes[idx];
-  try {
-    if (s.addedToLayer && _appLayers && _appLayers.entityLayer) {
-      _appLayers.entityLayer.removeChild(s.sprite.sprite);
-    }
-  } catch (e) {}
-  snakes.splice(idx, 1);
-  return true;
-}
-
-export function stepSnakes({ onlyVisible = true } = {}) {
-  const moved = [];
-  for (const s of snakes) {
-    if (onlyVisible && !s.addedToLayer) continue;
-    if (!s.path || s.path.length === 0) continue;
-    // dead snakes do not move
-    if (s.dead) continue;
-    // static snakes never move
-    if (s.mode === "static") continue;
-    if (s.mode === "bounce") {
-      const nextIndex = s.index + s.dir;
-      if (nextIndex < 0 || nextIndex >= s.path.length) {
-        s.dir = -s.dir;
-      }
-      s.index += s.dir;
-    } else if (s.mode === "loop") {
-      s.index = (s.index + 1) % s.path.length;
-    } else if (s.mode === "clock") {
-      // clockwise loop: always advance forward
-      s.index = (s.index + 1) % s.path.length;
-    } else if (s.mode === "unclock") {
-      // counter-clockwise loop: step backward
-      s.index = (s.index - 1 + s.path.length) % s.path.length;
-    } else {
-      // default fallback: bounce
-      const nextIndex = s.index + s.dir;
-      if (nextIndex < 0 || nextIndex >= s.path.length) {
-        s.dir = -s.dir;
-      }
-      s.index += s.dir;
-    }
-    const pos = s.path[s.index];
-    try {
-      if (s.sprite) {
-        s.sprite.gridX = pos.x;
-        s.sprite.gridY = pos.y;
-        s.sprite.updatePixelPosition();
-      }
-    } catch (e) {}
-    moved.push({ id: s.id, x: pos.x, y: pos.y, floor: s.floor });
+    snakes.push(snake);
+    return snake;
+  } catch (e) {
+    console.error("addSnake failed", e);
+    return null;
   }
-  return moved;
 }
 
-export function getSnakeAt(x, y, f) {
-  for (const s of snakes) {
-    // ignore dead snakes for collision / sight checks
-    if (s.dead) continue;
-    if (!s.path || s.path.length === 0) continue;
-    const pos = s.path && s.path[s.index];
-    if (!pos) continue;
-    if (pos.x === x && pos.y === y && s.floor === f) return true;
-    // also check if any other path point equals (x,y) in case sprite hasn't moved yet
-    // (not strictly necessary but conservative)
-    //if (s.path.some(p => p.x===x && p.y===y) && s.floor===f) return true;
-  }
-  return false;
-}
-
-export function getSnakes() {
-  return snakes.map((s) => ({
-    id: s.id,
-    floor: s.floor,
-    path: s.path.slice(),
-    index: s.index,
-    mode: s.mode,
-  }));
-}
-
-export function reset() {
-  try {
-    if (_floorListener) off("floorChanged", _floorListener);
-  } catch (e) {}
+// advance snakes one step. options: { onlyVisible: boolean }
+export function stepSnakes({ onlyVisible = false } = {}) {
+  let moved = false;
   try {
     for (const s of snakes) {
       try {
-        if (
-          s.addedToLayer &&
-          s.sprite &&
-          _appLayers &&
-          _appLayers.entityLayer
-        ) {
-          _appLayers.entityLayer.removeChild(s.sprite.sprite);
+        if (!s || s.dead) continue;
+        if (onlyVisible && s.floor !== mapService.getFloor()) continue;
+        const len = s.path ? s.path.length : 0;
+        if (len <= 1) continue; // static
+        const prevIdx = s.index;
+        if (s.mode === "clock") {
+          s.index = (s.index + 1) % len;
+        } else if (s.mode === "unclock") {
+          s.index = (s.index - 1 + len) % len;
+        } else if (s.mode === "bounce") {
+          // implement simple bounce by storing a direction flag on the object
+          if (typeof s._bounceDir === "undefined") s._bounceDir = 1;
+          s.index += s._bounceDir;
+          if (s.index >= len) {
+            s.index = len - 2 >= 0 ? len - 2 : 0;
+            s._bounceDir = -1;
+          } else if (s.index < 0) {
+            s.index = 1 < len ? 1 : 0;
+            s._bounceDir = 1;
+          }
+        } else if (s.mode === "static") {
+          // do nothing
+        } else {
+          // default loop
+          s.index = (s.index + 1) % len;
         }
+        if (s.index !== prevIdx) moved = true;
+        // update sprite position
+        try {
+          const pos = s.path && s.path[s.index];
+          if (pos && s.sprite) {
+            s.sprite.gridX = pos.x;
+            s.sprite.gridY = pos.y;
+            s.sprite.updatePixelPosition();
+            if (s.sprite.sprite)
+              s.sprite.sprite.visible = s.floor === mapService.getFloor();
+          }
+        } catch (e) {}
       } catch (e) {}
     }
   } catch (e) {}
-  snakes = [];
-  _nextId = 1;
-  _appLayers = null;
-  _floorListener = null;
-  _assetsLoaded = false;
+  return moved;
+}
+
+export function getSnakeAt(x, y, floor) {
+  try {
+    for (const s of snakes) {
+      try {
+        if (!s || s.dead) continue;
+        if (typeof floor === "number" && s.floor !== floor) continue;
+        const pos = s.path && s.path[s.index];
+        if (pos && pos.x === x && pos.y === y) return s;
+      } catch (e) {}
+    }
+  } catch (e) {}
+  return null;
 }
 
 export function resetPositions() {
   try {
     for (const s of snakes) {
-      if (!s.path || s.path.length === 0) continue;
-      s.index = typeof s.initialIndex === "number" ? s.initialIndex : 0;
-      s.dir = -1;
-      const pos = s.path[s.index];
       try {
-        if (s.sprite) {
-          s.sprite.gridX = pos.x;
-          s.sprite.gridY = pos.y;
-          s.sprite.updatePixelPosition();
-        }
+        s.index = typeof s.initialIndex === "number" ? s.initialIndex : 0;
+        s.dead = false;
+        try {
+          if (s.sprite && s.sprite.sprite) {
+            s.sprite.sprite.texture = PIXI.Texture.from(
+              s.mode === "static" ? "img/snake_static.png" : "img/snake.png"
+            );
+            s.sprite.sprite.visible = s.floor === mapService.getFloor();
+            s.sprite.updatePixelPosition();
+          }
+        } catch (e) {}
       } catch (e) {}
     }
   } catch (e) {}
 }
 
-// Mark any snake currently occupying (x,y,floor) as dead. Dead snakes stop moving,
-// show a dead sprite and are ignored for petrification/collision checks. Returns
-// array of killed snake ids or null if none.
-export function killSnakeAt(x, y, floor) {
-  const killed = [];
-  for (const s of snakes) {
-    if (s.floor !== floor) continue;
-    if (s.dead) continue;
+export function serialize() {
+  try {
+    return snakes.map((s) => ({
+      id: s.id,
+      floor: s.floor,
+      path: s.path,
+      index: s.index,
+      mode: s.mode,
+      dead: !!s.dead,
+      initialIndex: typeof s.initialIndex === "number" ? s.initialIndex : 0,
+    }));
+  } catch (e) {
+    console.error("snakeManager.serialize failed", e);
+    return null;
+  }
+}
+
+export function deserialize(arr) {
+  try {
+    if (!Array.isArray(arr)) return false;
     try {
-      const pos = s.path && s.path[s.index];
-      if (!pos) continue;
-      if (pos.x === x && pos.y === y) {
-        s.dead = true;
-        // For static (map) snakes, clear the underlying map tile so the
-        // dead snake no longer causes petrification via tile checks.
+      for (const s of snakes) {
         try {
-          if (s.mode === "static") {
-            try {
-              mapService.setTile(pos.x, pos.y, 0, s.floor);
-            } catch (e) {}
+          if (s && s.sprite && s.sprite.sprite && s.sprite.sprite.parent) {
+            s.sprite.sprite.parent.removeChild(s.sprite.sprite);
           }
         } catch (e) {}
-        // change visual to dead sprite but keep GameObject so it remains visible
-        try {
-          if (s.sprite && s.sprite.sprite) {
-            s.sprite.sprite.texture = PIXI.Texture.from("img/snake_dead.png");
-          }
-        } catch (e) {}
-        killed.push(s.id);
       }
     } catch (e) {}
+    snakes = [];
+    for (const item of arr) {
+      try {
+        const n = addSnake({
+          floor: item.floor,
+          path: Array.isArray(item.path) ? item.path : [],
+          mode: item.mode || "loop",
+          startIndex: typeof item.index === "number" ? item.index : 0,
+        });
+        if (n) {
+          n.dead = !!item.dead;
+          n.initialIndex =
+            typeof item.initialIndex === "number"
+              ? item.initialIndex
+              : n.initialIndex;
+          try {
+            if (n.dead && n.sprite && n.sprite.sprite) {
+              n.sprite.sprite.texture = PIXI.Texture.from("img/snake_dead.png");
+            }
+          } catch (e) {}
+        }
+      } catch (e) {}
+    }
+    return true;
+  } catch (e) {
+    console.error("snakeManager.deserialize failed", e);
+    return false;
   }
-  return killed.length ? killed : null;
+}
+
+export function killSnakeAt(x, y, floor) {
+  try {
+    const killed = [];
+    for (const s of snakes) {
+      try {
+        if (!s) continue;
+        if (typeof floor === "number" && s.floor !== floor) continue;
+        const pos = s.path && s.path[s.index];
+        if (pos && pos.x === x && pos.y === y) {
+          s.dead = true;
+          try {
+            if (s.sprite && s.sprite.sprite) {
+              s.sprite.sprite.texture = PIXI.Texture.from("img/snake_dead.png");
+            }
+          } catch (e) {}
+          killed.push(s);
+        }
+      } catch (e) {}
+    }
+    return killed;
+  } catch (e) {
+    console.error("killSnakeAt failed", e);
+    return null;
+  }
 }

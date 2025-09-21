@@ -736,4 +736,37 @@ function openChangeModal() {
   }
 }
 
+export function serialize() {
+  try {
+    return {
+      cushionState: window.__cushionState || null,
+      cushionMap: window.__cushionMap || null,
+    };
+  } catch (e) {
+    console.error("magicManager.serialize failed", e);
+    return null;
+  }
+}
+
+export function deserialize(payload) {
+  try {
+    if (!payload || typeof payload !== "object") return;
+    if (payload.cushionState && typeof payload.cushionState === "object") {
+      window.__cushionState = payload.cushionState;
+    } else {
+      window.__cushionState = window.__cushionState || {
+        active: false,
+        remainingSteps: 0,
+      };
+    }
+    if (payload.cushionMap && typeof payload.cushionMap === "object") {
+      window.__cushionMap = payload.cushionMap;
+    } else {
+      window.__cushionMap = window.__cushionMap || {};
+    }
+  } catch (e) {
+    console.error("magicManager.deserialize failed", e);
+  }
+}
+
 export default { init };

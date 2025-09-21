@@ -52,3 +52,30 @@ export function onFall() {
   console.log("player fell into hole on floor", currentFloor);
   resetMap(currentFloor);
 }
+
+export function serialize() {
+  try {
+    const copy = Object.fromEntries(
+      Object.entries(maps).map(([k, v]) => [k, v.map((r) => r.slice())])
+    );
+    return { maps: copy, currentFloor };
+  } catch (e) {
+    console.error("mapService.serialize failed", e);
+    return null;
+  }
+}
+
+export function deserialize(obj) {
+  try {
+    if (!obj || !obj.maps) return false;
+    const loaded = Object.fromEntries(
+      Object.entries(obj.maps).map(([k, v]) => [k, v.map((r) => r.slice())])
+    );
+    maps = loaded;
+    if (typeof obj.currentFloor === "number") currentFloor = obj.currentFloor;
+    return true;
+  } catch (e) {
+    console.error("mapService.deserialize failed", e);
+    return false;
+  }
+}

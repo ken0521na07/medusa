@@ -26,6 +26,7 @@ import {
   STATUE_BY_FLOOR,
   STATUE_SYNC,
   TILE_SIZE,
+  ORIGINAL_MAPS, // added for original tile checks
 } from "../core/constants.js";
 // import { startTimer as startTimerCore } from "./timer.js";
 import Player from "../entities/player.js";
@@ -38,8 +39,9 @@ import * as snakeManager from "../managers/snakeManager.js";
 import GameObject from "../entities/gameObject.js";
 import { MAPS } from "../core/constants.js";
 import * as statueManager from "../managers/statueManager.js";
-import magicManager from "../managers/magicManager.js";
+import * as puzzleManager from "../managers/puzzleManager.js";
 import * as changeManager from "../managers/changeManager.js";
+import * as magicManager from "../managers/magicManager.js";
 
 export async function setupUI() {
   const app = initEngine();
@@ -66,6 +68,66 @@ export async function setupUI() {
     await snakeManager.initSnakes(app._layers);
   } catch (e) {}
 
+  // --- Torches: runtime storage for placed torches
+  window.__torches = window.__torches || {}; // key -> { x,y,floor,sprite,isCorrect }
+  const _torchKey = (x, y, f) => `${x},${y},${f}`;
+
+  function _placeTorchAt(x, y, f, isCorrect) {
+    try {
+      const key = _torchKey(x, y, f);
+      if (window.__torches[key]) return false; // already placed
+      const img = isCorrect ? "img/torch_on.jpg" : "img/torch_off.jpg";
+      const spr = PIXI.Sprite.from(img);
+      try {
+        spr.width = TILE_SIZE;
+        spr.height = TILE_SIZE;
+      } catch (e) {}
+      spr.x = x * TILE_SIZE;
+      spr.y = y * TILE_SIZE;
+      // visible only when viewing the same floor; persist otherwise
+      try {
+        const currentFloor = mapService.getFloor();
+        spr.visible = f === currentFloor;
+      } catch (e) {
+        spr.visible = false;
+      }
+      try {
+        // add torch to mapLayer so player (in entityLayer) renders above it
+        if (app && app._layers && app._layers.mapLayer) {
+          app._layers.mapLayer.addChild(spr);
+        } else if (app && app.stage) {
+          app.stage.addChildAt(spr, 0);
+        }
+      } catch (e) {}
+      window.__torches[key] = {
+        x,
+        y,
+        floor: f,
+        sprite: spr,
+        isCorrect: !!isCorrect,
+      };
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function _removeTorchAt(x, y, f) {
+    try {
+      const key = _torchKey(x, y, f);
+      const entry = window.__torches[key];
+      if (!entry) return false;
+      try {
+        if (entry.sprite && entry.sprite.parent)
+          entry.sprite.parent.removeChild(entry.sprite);
+      } catch (e) {}
+      delete window.__torches[key];
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   // listen for floor change events to update background image
   on("floorChanged", (floor) => {
     try {
@@ -79,6 +141,56 @@ export async function setupUI() {
           if (s && s.obj && typeof s.floor !== "undefined") {
             s.obj.sprite.visible = s.floor === floor;
           }
+        }
+      } catch (e) {}
+      // update torches visibility/parent on floor change: show only those matching the new floor
+      try {
+        const torches = window.__torches || {};
+        for (const k of Object.keys(torches)) {
+          try {
+            const t = torches[k];
+            if (!t) continue;
+            // recreate sprite if missing
+            if (!t.sprite || !t.sprite.parent) {
+              const imgPath = t.isCorrect
+                ? "img/torch_on.jpg"
+                : "img/torch_off.jpg";
+              const spr = PIXI.Sprite.from(imgPath);
+              try {
+                spr.width = TILE_SIZE;
+                spr.height = TILE_SIZE;
+              } catch (e) {}
+              t.sprite = spr;
+            } else {
+              // refresh texture
+              try {
+                const desiredImg = t.isCorrect
+                  ? "img/torch_on.jpg"
+                  : "img/torch_off.jpg";
+                t.sprite.texture = PIXI.Texture.from(desiredImg);
+              } catch (e) {}
+            }
+            // update pixel position
+            try {
+              t.sprite.x = t.x * TILE_SIZE;
+              t.sprite.y = t.y * TILE_SIZE;
+            } catch (e) {}
+            // ensure sprite is attached to mapLayer
+            try {
+              if (app && app._layers && app._layers.mapLayer) {
+                if (t.sprite.parent !== app._layers.mapLayer) {
+                  try {
+                    if (t.sprite.parent) t.sprite.parent.removeChild(t.sprite);
+                  } catch (e) {}
+                  app._layers.mapLayer.addChild(t.sprite);
+                }
+              }
+            } catch (e) {}
+            // visible only when torch.floor === current viewed floor
+            try {
+              t.sprite.visible = t.floor === floor;
+            } catch (e) {}
+          } catch (e) {}
         }
       } catch (e) {}
     } catch (e) {}
@@ -370,6 +482,25 @@ export async function setupUI() {
       return;
     }
 
+    // medusa front interaction: if facing medusa and medusaDefeated flag is true,
+    // do not petrify and allow A to 'defeat' medusa when pressed
+    try {
+      if (
+        (frontTile === TILE.MEDUSA || frontTile === "medusa") &&
+        playerState &&
+        playerState.medusaDefeated
+      ) {
+        try {
+          showCustomAlert("メドゥーサを討伐した！");
+        } catch (e) {
+          try {
+            window.alert("メドゥーサを討伐した！");
+          } catch (e2) {}
+        }
+        return;
+      }
+    } catch (e) {}
+
     const x = player.gridX;
     const y = player.gridY;
     const currentTileType = mapService.getTile(x, y);
@@ -400,27 +531,57 @@ export async function setupUI() {
             if (listEl && typeof renderInfoList === "function")
               renderInfoList(listEl);
           } catch (e) {}
-          // show pickup alert: "(title)を手に入れた"
+
+          // Special handling for the torch/info_torch tile: grant 6 torches and show custom message
           try {
-            showCustomAlert((info.title || "情報") + "を手に入れた");
-          } catch (e) {
-            try {
-              window.alert((info.title || "情報") + "を手に入れた");
-            } catch (e2) {}
-          }
+            if (
+              infoKey === "info_torch" ||
+              currentTileType === TILE.INFO_TORCH ||
+              currentTileType === "info_torch"
+            ) {
+              try {
+                // ensure numeric storage
+                playerState.torchCount = (playerState.torchCount || 0) + 6;
+                // mark that the player has obtained torches at least once
+                try {
+                  playerState.gotTorches = true;
+                } catch (e) {}
+              } catch (e) {}
+
+              try {
+                showCustomAlert(
+                  "メドューサの情報と松明を入手した。Aボタンを押すことでそのますに松明を配置できる"
+                );
+              } catch (e) {
+                try {
+                  window.alert(
+                    "メドューサの情報と松明を入手した。Aボタンを押すことでそのますに松明を配置できる"
+                  );
+                } catch (e2) {}
+              }
+            } else {
+              // show pickup alert: "(title)を手に入れた"
+              try {
+                showCustomAlert((info.title || "情報") + "を手に入れた");
+              } catch (e) {
+                try {
+                  window.alert((info.title || "情報") + "を手に入れた");
+                } catch (e2) {}
+              }
+            }
+          } catch (e) {}
         }
         return;
       }
     } catch (e) {}
 
-    // --- restored: handle box_* pickups (box_1f, box_3f, box_cushion, box_change, box_medusa)
+    // --- restored: handle box_* pickups (box_1f, box_3f, box_cushion, box_change)
     try {
       const boxKeys = [
         TILE.BOX_1F,
         TILE.BOX_3F,
         TILE.BOX_CUSHION,
         TILE.BOX_CHANGE,
-        TILE.BOX_MEDUSA,
       ];
       if (
         typeof currentTileType === "string" &&
@@ -434,19 +595,26 @@ export async function setupUI() {
         try {
           mapService.setTile(x, y, 0);
         } catch (e) {}
-        // special handling: acquiring BOX_3F grants MOVE magic
+
+        // notify listeners so overlays refresh immediately (box -> box_opened)
+        try {
+          emit && typeof emit === "function" && emit("puzzleChanged");
+        } catch (e) {}
+
+        // special handling: acquiring BOX_3F grants MOVE magic (kept as unlock only)
         try {
           if (key === TILE.BOX_3F || key === "box_3f") {
-            // previously set playerState.gotMoveMagic = true; now rely on allInfo.box_3f.unlocked
-            // allInfo entry was marked unlocked above (info.unlocked = true)
+            // no additional runtime side-effects here; info unlocked above
           }
         } catch (e) {}
+
         // refresh magic list UI if open
         try {
           const list = document.getElementById("magic-list");
           if (list && typeof renderMagicList === "function")
             renderMagicList(list);
         } catch (e) {}
+
         // show pickup alert
         try {
           const title = info && info.title ? info.title : "魔法";
@@ -457,6 +625,176 @@ export async function setupUI() {
               (info && info.title ? info.title : "魔法") + "を手に入れた"
             );
           } catch (e2) {}
+        }
+        return;
+      }
+    } catch (e) {}
+
+    // --- Torches: place / pick up when standing on floor or torch_correct
+    try {
+      // precompute torch key and check for an existing placed torch at this position
+      const torchKey = _torchKey(x, y, player.floor);
+      const existingTorch = (window.__torches || {})[torchKey];
+
+      // define puzzle tile keys for which we want to defer to puzzle handling when
+      // the player has no torches
+      const PUZZLE_TILE_KEYS = [
+        TILE.PUZZLE_1H,
+        TILE.PUZZLE_1S,
+        TILE.PUZZLE_1C,
+        TILE.PUZZLE_1D,
+        TILE.PUZZLE_2H,
+        TILE.PUZZLE_2S,
+        TILE.PUZZLE_2C,
+        TILE.PUZZLE_2D,
+        TILE.PUZZLE_3,
+        TILE.PUZZLE_4H,
+        TILE.PUZZLE_4D,
+        TILE.PUZZLE_4S,
+        TILE.PUZZLE_4C,
+        TILE.PUZZLE_5,
+        TILE.PUZZLE_B1,
+      ];
+
+      // If player has no torches and there is no torch placed here:
+      // - If standing on a puzzle tile -> skip torch logic so puzzle pickup runs
+      // - Otherwise -> show guidance that the player has no torches
+      const torchCount = Number(playerState.torchCount || 0);
+      if (torchCount === 0 && !existingTorch) {
+        const isStandingOnPuzzle = PUZZLE_TILE_KEYS.includes(currentTileType);
+        if (isStandingOnPuzzle) {
+          // do nothing and allow subsequent puzzle handling to run
+        } else {
+          try {
+            if (playerState && playerState.gotTorches) {
+              // player obtained torches before but currently has 0
+              showCustomAlert(
+                "もう松明を持っていない、すでに置いてある松明の上でAボタンを押すことで回収できる"
+              );
+            }
+          } catch (e) {}
+          return;
+        }
+      } else {
+        // existing handling: if a torch is already placed here, A picks it up
+        if (existingTorch) {
+          const removed = _removeTorchAt(x, y, player.floor);
+          if (removed) {
+            try {
+              playerState.torchCount = (playerState.torchCount || 0) + 1;
+            } catch (e) {}
+            try {
+              showCustomAlert("松明を回収した");
+            } catch (e) {}
+          }
+          return;
+        }
+
+        // Explicitly check the tile at the player's current floor/position
+        const tileAtPos = mapService.getTile(x, y, player.floor);
+        // Strict checks: only numeric 0 (floor) or explicit TORCH_CORRECT string are allowed
+        const isFloor = tileAtPos === 0 || tileAtPos === TILE.FLOOR;
+        const isCorrect =
+          tileAtPos === TILE.TORCH_CORRECT || tileAtPos === "torch_correct";
+
+        // Helper: map a tile value to TILE key name for logging
+        const getTileKeyName = (val) => {
+          try {
+            for (const k of Object.keys(TILE)) {
+              if (TILE[k] === val) return k;
+            }
+            // handle numeric 0 explicitly
+            if (val === 0) return "FLOOR";
+            if (typeof val === "string") return val.toUpperCase();
+          } catch (e) {}
+          return String(val);
+        };
+
+        // Determine original map tile at this location (based on ORIGINAL_MAPS)
+        let origTile = null;
+        try {
+          const om = ORIGINAL_MAPS || {};
+          const floorMap = om[player.floor] || om[String(player.floor)];
+          if (
+            Array.isArray(floorMap) &&
+            floorMap[y] &&
+            typeof floorMap[y][x] !== "undefined"
+          ) {
+            origTile = floorMap[y][x];
+          }
+        } catch (e) {
+          origTile = null;
+        }
+
+        // Log current and original tile types for debugging when attempting to place
+        try {
+          console.log(
+            `[torch] attempt at (${x},${y},f=${
+              player.floor
+            }) current=${getTileKeyName(tileAtPos)} original=${getTileKeyName(
+              origTile
+            )}`
+          );
+        } catch (e) {}
+
+        // Disallow placement if the original map tile wasn't FLOOR (0) or TORCH_CORRECT
+        const origIsFloor = origTile === 0 || origTile === TILE.FLOOR;
+        const origIsCorrect =
+          origTile === TILE.TORCH_CORRECT || origTile === "torch_correct";
+        if (!origIsFloor && !origIsCorrect) {
+          try {
+            showCustomAlert("そこには松明は置けない");
+          } catch (e) {}
+          return;
+        }
+
+        // If tile not floor/torch_correct at runtime: cannot place
+        if (!isFloor && !isCorrect) {
+          try {
+            showCustomAlert("そこには松明は置けない");
+          } catch (e) {}
+          return;
+        }
+
+        // Tile is valid for placement: attempt to place if the player has torches
+        if ((playerState.torchCount || 0) > 0) {
+          const ok = _placeTorchAt(x, y, player.floor, !!isCorrect);
+          if (ok) {
+            try {
+              playerState.torchCount = Math.max(
+                0,
+                (playerState.torchCount || 0) - 1
+              );
+            } catch (e) {}
+            try {
+              showCustomAlert("松明を設置した");
+            } catch (e) {}
+
+            // after placing, check win condition: 6 torches all on torch_correct tiles
+            try {
+              let correctCount = 0;
+              for (const k of Object.keys(window.__torches || {})) {
+                const t = window.__torches[k];
+                if (t && t.isCorrect) correctCount++;
+              }
+              if (correctCount >= 6) {
+                try {
+                  // warp player to (5,1,6)
+                  player.teleport(5, 1, 6);
+                  showCustomAlert(
+                    "石化が無効化され、メデューサを討伐する準備が整った。"
+                  );
+                } catch (e) {}
+              }
+            } catch (e) {}
+          }
+        } else {
+          // Player has no torches to place — show helpful guidance
+          try {
+            showCustomAlert(
+              "もう松明を持っていない、すでに置いてある松明の上でAボタンを押すことで回収できる"
+            );
+          } catch (e) {}
         }
         return;
       }
@@ -803,6 +1141,465 @@ export async function setupUI() {
 
   // initialize info modal handlers (list click etc.)
   initInfoModalHandlers();
+
+  // after player created and managers initialized, attempt to load saved state
+  try {
+    // lazy import to avoid circular issues
+    const stateManager = await import("../managers/stateManager.js");
+    const saved =
+      stateManager && typeof stateManager.load === "function"
+        ? stateManager.load()
+        : null;
+    if (saved) {
+      try {
+        // restore runtime map first so tiles/statues/snakes align
+        try {
+          if (saved.map && typeof mapService.deserialize === "function") {
+            mapService.deserialize(saved.map);
+          }
+        } catch (e) {}
+
+        // restore statues before snakes so statue objects exist in expected locations
+        try {
+          if (
+            saved.statues &&
+            typeof statueManager.deserialize === "function"
+          ) {
+            statueManager.deserialize(saved.statues);
+          }
+        } catch (e) {}
+
+        // restore snakes
+        try {
+          if (saved.snakes && typeof snakeManager.deserialize === "function") {
+            snakeManager.deserialize(saved.snakes);
+          }
+        } catch (e) {}
+
+        // ensure visuals sync to the (possibly restored) current floor
+        try {
+          emit("floorChanged", mapService.getFloor());
+        } catch (e) {}
+
+        // restore player state (position, floor, direction)
+        if (saved.player && typeof window.__playerInstance === "object") {
+          try {
+            window.__playerInstance.deserialize(saved.player);
+          } catch (e) {}
+        }
+
+        // restore playerState (torchCount, medusaDefeated, etc.)
+        try {
+          if (saved.playerState && typeof saved.playerState === "object") {
+            Object.assign(playerState, saved.playerState);
+          }
+        } catch (e) {}
+
+        // restore allInfo unlocked flags
+        try {
+          if (saved.allInfo && typeof saved.allInfo === "object") {
+            for (const k of Object.keys(saved.allInfo)) {
+              if (allInfo[k] && typeof saved.allInfo[k].unlocked === "boolean")
+                allInfo[k].unlocked = saved.allInfo[k].unlocked;
+            }
+          }
+        } catch (e) {}
+
+        // restore torches (clear existing then recreate)
+        try {
+          if (Array.isArray(saved.torches)) {
+            // remove any existing runtime torches
+            try {
+              window.__torches = {};
+            } catch (e) {}
+            for (const t of saved.torches) {
+              try {
+                if (t && typeof t.x === "number") {
+                  _placeTorchAt(t.x, t.y, t.floor, !!t.isCorrect);
+                }
+              } catch (e) {}
+            }
+          }
+        } catch (e) {}
+
+        // after restoring torches (inside the saved load block), also restore puzzles, change and magic state
+        try {
+          // restore puzzles (unlocked pieces and solved answers)
+          if (
+            saved.puzzles &&
+            typeof puzzleManager.deserialize === "function"
+          ) {
+            try {
+              puzzleManager.deserialize(saved.puzzles);
+            } catch (e) {}
+          }
+        } catch (e) {}
+
+        try {
+          // restore changeManager runtime state (elevatorPerFloor, global, per-floor overrides)
+          if (saved.change && typeof changeManager.deserialize === "function") {
+            try {
+              changeManager.deserialize(saved.change);
+            } catch (e) {}
+          }
+        } catch (e) {}
+
+        try {
+          // restore magic-related runtime state (cushion state/map)
+          if (saved.magic && typeof magicManager.deserialize === "function") {
+            try {
+              magicManager.deserialize(saved.magic);
+            } catch (e) {}
+          }
+        } catch (e) {}
+      } catch (e) {
+        console.error("failed to apply saved state", e);
+      }
+    }
+
+    // autosave helper
+    const doSave = () => {
+      try {
+        // allow external code to suppress saving (e.g. RESET flow)
+        try {
+          if (typeof window !== "undefined" && window.__skipSaving) return;
+        } catch (e) {}
+        const out = {};
+        // player
+        try {
+          out.player = window.__playerInstance
+            ? window.__playerInstance.serialize()
+            : null;
+        } catch (e) {
+          out.player = null;
+        }
+        // playerState
+        try {
+          out.playerState = Object.assign({}, playerState);
+        } catch (e) {
+          out.playerState = null;
+        }
+        // allInfo
+        try {
+          out.allInfo = {};
+          for (const k of Object.keys(allInfo)) {
+            out.allInfo[k] = {
+              unlocked: !!(allInfo[k] && allInfo[k].unlocked),
+            };
+          }
+        } catch (e) {
+          out.allInfo = null;
+        }
+        // torches
+        try {
+          out.torches = [];
+          const torches = window.__torches || {};
+          for (const k of Object.keys(torches)) {
+            const t = torches[k];
+            if (!t) continue;
+            out.torches.push({
+              x: t.x,
+              y: t.y,
+              floor: t.floor,
+              isCorrect: !!t.isCorrect,
+            });
+          }
+        } catch (e) {
+          out.torches = null;
+        }
+
+        // map runtime state
+        try {
+          out.map =
+            typeof mapService.serialize === "function"
+              ? mapService.serialize()
+              : null;
+        } catch (e) {
+          out.map = null;
+        }
+        // snakes runtime state
+        try {
+          out.snakes =
+            typeof snakeManager.serialize === "function"
+              ? snakeManager.serialize()
+              : null;
+        } catch (e) {
+          out.snakes = null;
+        }
+        // statues runtime state
+        try {
+          out.statues =
+            typeof statueManager.serialize === "function"
+              ? statueManager.serialize()
+              : null;
+        } catch (e) {
+          out.statues = null;
+        }
+
+        // puzzles runtime state
+        try {
+          out.puzzles =
+            typeof puzzleManager.serialize === "function"
+              ? puzzleManager.serialize()
+              : null;
+        } catch (e) {
+          out.puzzles = null;
+        }
+
+        // change runtime state
+        try {
+          out.change =
+            typeof changeManager.serialize === "function"
+              ? changeManager.serialize()
+              : null;
+        } catch (e) {
+          out.change = null;
+        }
+
+        // magic runtime state (cushion)
+        try {
+          out.magic =
+            typeof magicManager.serialize === "function"
+              ? magicManager.serialize()
+              : null;
+        } catch (e) {
+          out.magic = null;
+        }
+
+        try {
+          stateManager.save(out);
+        } catch (e) {}
+      } catch (e) {}
+    };
+
+    // autosave on important events
+    try {
+      on("playerMoved", () => {
+        try {
+          doSave();
+        } catch (e) {}
+      });
+      on("floorChanged", () => {
+        try {
+          doSave();
+        } catch (e) {}
+      });
+      // save when puzzles change (unlock or solved) so the new puzzle state is persisted immediately
+      try {
+        on("puzzleChanged", () => {
+          try {
+            doSave();
+          } catch (e) {}
+        });
+      } catch (e) {}
+    } catch (e) {}
+
+    // save beforeunload
+    try {
+      window.addEventListener("beforeunload", () => {
+        try {
+          doSave();
+        } catch (e) {}
+      });
+    } catch (e) {}
+  } catch (e) {}
+
+  // overlays for boxes and puzzles
+  try {
+    window.__overlays = window.__overlays || {}; // key -> sprite
+    const _overlayKey = (x, y, f) => `${x},${y},${f}`;
+
+    function _removeOverlayKey(k) {
+      try {
+        const entry = window.__overlays[k];
+        if (!entry) return;
+        if (entry.sprite && entry.sprite.parent)
+          entry.sprite.parent.removeChild(entry.sprite);
+      } catch (e) {}
+      try {
+        delete window.__overlays[k];
+      } catch (e) {}
+    }
+
+    function _refreshOverlayAt(x, y, f, currentFloorView) {
+      try {
+        const tile = mapService.getTile(x, y, f);
+        const key = _overlayKey(x, y, f);
+        // box keys
+        const boxKeys = [
+          TILE.BOX_1F,
+          TILE.BOX_3F,
+          TILE.BOX_CUSHION,
+          TILE.BOX_CHANGE,
+        ];
+        // puzzle keys
+        const puzzleKeys = [
+          TILE.PUZZLE_1H,
+          TILE.PUZZLE_1S,
+          TILE.PUZZLE_1C,
+          TILE.PUZZLE_1D,
+          TILE.PUZZLE_2H,
+          TILE.PUZZLE_2S,
+          TILE.PUZZLE_2C,
+          TILE.PUZZLE_2D,
+          TILE.PUZZLE_3,
+          TILE.PUZZLE_4H,
+          TILE.PUZZLE_4D,
+          TILE.PUZZLE_4S,
+          TILE.PUZZLE_4C,
+          TILE.PUZZLE_5,
+          TILE.PUZZLE_B1,
+        ];
+
+        // remove any existing overlay if tile no longer of interest
+        if (!tile || !(boxKeys.includes(tile) || puzzleKeys.includes(tile))) {
+          _removeOverlayKey(key);
+          return;
+        }
+
+        let imgPath = null;
+        // boxes: show closed or opened depending on allInfo unlocked
+        if (boxKeys.includes(tile)) {
+          const infoKey = typeof tile === "string" ? tile : null;
+          const info = infoKey && allInfo[infoKey] ? allInfo[infoKey] : null;
+          const opened = info && info.unlocked;
+          imgPath = opened ? "img/box_opened.png" : "img/box.png";
+        }
+
+        // puzzles: show suit-specific for single-piece tiles, puzzle.png for set tiles
+        if (puzzleKeys.includes(tile)) {
+          // single piece tiles
+          const singleMap = {
+            [TILE.PUZZLE_1H]: "heart",
+            [TILE.PUZZLE_1S]: "spade",
+            [TILE.PUZZLE_1C]: "clover",
+            [TILE.PUZZLE_1D]: "diamond",
+            [TILE.PUZZLE_2H]: "heart",
+            [TILE.PUZZLE_2S]: "spade",
+            [TILE.PUZZLE_2C]: "clover",
+            [TILE.PUZZLE_2D]: "diamond",
+            [TILE.PUZZLE_4H]: "heart",
+            [TILE.PUZZLE_4D]: "diamond",
+            [TILE.PUZZLE_4S]: "spade",
+            [TILE.PUZZLE_4C]: "clover",
+          };
+          if (singleMap[tile]) {
+            imgPath = `img/${singleMap[tile]}.png`;
+          } else {
+            // set-based puzzle (3,5,b1)
+            imgPath = "img/puzzle.png";
+          }
+        }
+
+        if (!imgPath) {
+          _removeOverlayKey(key);
+          return;
+        }
+
+        // create or update sprite
+        let entry = window.__overlays[key];
+        if (!entry || !entry.sprite) {
+          const spr = PIXI.Sprite.from(imgPath);
+          try {
+            spr.width = TILE_SIZE;
+            spr.height = TILE_SIZE;
+          } catch (e) {}
+          spr.x = x * TILE_SIZE;
+          spr.y = y * TILE_SIZE;
+          try {
+            spr.visible =
+              f ===
+              (typeof currentFloorView === "number"
+                ? currentFloorView
+                : mapService.getFloor());
+          } catch (e) {
+            spr.visible = true;
+          }
+          try {
+            if (app && app._layers && app._layers.mapLayer)
+              app._layers.mapLayer.addChild(spr);
+            else if (app && app.stage) app.stage.addChildAt(spr, 0);
+          } catch (e) {}
+          window.__overlays[key] = {
+            x,
+            y,
+            floor: f,
+            sprite: spr,
+            img: imgPath,
+          };
+        } else {
+          // update texture if changed
+          try {
+            if (entry.img !== imgPath)
+              entry.sprite.texture = PIXI.Texture.from(imgPath);
+            entry.img = imgPath;
+            entry.sprite.x = x * TILE_SIZE;
+            entry.sprite.y = y * TILE_SIZE;
+            entry.sprite.visible =
+              f ===
+              (typeof currentFloorView === "number"
+                ? currentFloorView
+                : mapService.getFloor());
+          } catch (e) {}
+        }
+      } catch (e) {}
+    }
+
+    function refreshOverlaysForFloor(f) {
+      try {
+        const w = mapService.getWidth();
+        const h = mapService.getHeight();
+        for (let yy = 0; yy < h; yy++) {
+          for (let xx = 0; xx < w; xx++) {
+            try {
+              _refreshOverlayAt(xx, yy, f, f);
+            } catch (e) {}
+          }
+        }
+      } catch (e) {}
+    }
+
+    // initial overlay refresh for starting floor
+    try {
+      refreshOverlaysForFloor(mapService.getFloor());
+    } catch (e) {}
+
+    // refresh overlays on relevant events
+    try {
+      on("floorChanged", (newFloor) => {
+        try {
+          // update visibility for all overlays and refresh for the newly shown floor
+          const overlays = window.__overlays || {};
+          for (const k of Object.keys(overlays)) {
+            try {
+              const e = overlays[k];
+              if (e && e.sprite) e.sprite.visible = e.floor === newFloor;
+            } catch (e) {}
+          }
+          refreshOverlaysForFloor(newFloor);
+        } catch (e) {}
+      });
+    } catch (e) {}
+
+    try {
+      on("puzzleChanged", () => {
+        try {
+          refreshOverlaysForFloor(mapService.getFloor());
+        } catch (e) {}
+      });
+    } catch (e) {}
+
+    try {
+      on("playerMoved", () => {
+        try {
+          // ensure overlays reflect any immediate tile removals (e.g. pickups)
+          refreshOverlaysForFloor(mapService.getFloor());
+        } catch (e) {}
+      });
+    } catch (e) {}
+  } catch (e) {}
+
+  // ...existing code...
 }
 
 export function startTimer() {

@@ -1,6 +1,7 @@
 import { allPuzzles } from "../core/constants.js";
 import { setTile } from "./mapService.js";
 import { openPuzzleModal, showCustomAlert } from "../ui/modals.js";
+import { emit } from "../core/eventBus.js";
 
 // popup DOM refs
 const popupOverlay = document.getElementById("puzzle-popup-overlay");
@@ -11,6 +12,8 @@ const popupClose = document.getElementById("puzzle-popup-close");
 
 let _currentPiece = null;
 let _currentSet = null;
+// track the setId currently displayed in the puzzle modal (if any)
+let _openSetId = null;
 
 function showPuzzlePopup(piece, puzzleSet) {
   _currentPiece = piece;
@@ -43,6 +46,7 @@ if (popupOverlay)
   popupOverlay.addEventListener("click", (e) => {
     if (e.target === popupOverlay) closePuzzlePopup();
   });
+
 if (popupSubmit) {
   popupSubmit.addEventListener("click", () => {
     if (!_currentPiece || !_currentSet) return;
@@ -64,6 +68,24 @@ if (popupSubmit) {
         window.alert("正解！");
       } catch (e) {}
       closePuzzlePopup();
+
+      // notify app that puzzle state changed so it can autosave (solved answer)
+      try {
+        emit("puzzleChanged");
+      } catch (e) {}
+
+      // also refresh puzzle list/modal UI if open
+      try {
+        const listEl = document.getElementById("puzzle-set-list");
+        if (listEl && typeof renderPuzzleSetList === "function")
+          renderPuzzleSetList(listEl);
+        const modal = document.getElementById("puzzle-modal");
+        if (modal && modal.style.display === "flex" && _openSetId) {
+          const grid = document.getElementById("puzzle-grid");
+          if (grid && typeof renderPuzzleGrid === "function")
+            renderPuzzleGrid(allPuzzles[_openSetId], grid);
+        }
+      } catch (e) {}
     } else {
       try {
         window.alert("不正解です。もう一度試してください。");
@@ -168,6 +190,27 @@ export function handleGetPuzzlePiece(setId, pieceId, playerPos, options = {}) {
       }
     } catch (e) {}
     // update UI: when opening puzzle modal, render grid will show only unlocked pieces as their images
+
+    // notify app that puzzle state changed so it can autosave
+    try {
+      emit("puzzleChanged");
+    } catch (e) {}
+
+    // refresh puzzle list/modal UI immediately if the puzzle modal is open
+    try {
+      const listEl = document.getElementById("puzzle-set-list");
+      if (listEl && typeof renderPuzzleSetList === "function")
+        renderPuzzleSetList(listEl);
+      const modal = document.getElementById("puzzle-modal");
+      if (modal && modal.style.display === "flex") {
+        // if the user is currently viewing this set, re-render that grid
+        if (_openSetId === setId) {
+          const grid = document.getElementById("puzzle-grid");
+          if (grid && typeof renderPuzzleGrid === "function")
+            renderPuzzleGrid(puzzleSet, grid);
+        }
+      }
+    } catch (e) {}
   }
 }
 
@@ -194,6 +237,27 @@ export function handleGetPuzzleSet(setId, playerPos, options = {}) {
         showCustomAlert(message, { allowOverlayClose: true });
       } else {
         window.alert(message);
+      }
+    }
+  } catch (e) {}
+
+  // notify app that puzzle state changed so it can autosave
+  try {
+    emit("puzzleChanged");
+  } catch (e) {}
+
+  // refresh puzzle list/modal UI immediately if the puzzle modal is open
+  try {
+    const listEl = document.getElementById("puzzle-set-list");
+    if (listEl && typeof renderPuzzleSetList === "function")
+      renderPuzzleSetList(listEl);
+    const modal = document.getElementById("puzzle-modal");
+    if (modal && modal.style.display === "flex") {
+      // render this set's grid if it's currently open
+      if (_openSetId === setId) {
+        const grid = document.getElementById("puzzle-grid");
+        if (grid && typeof renderPuzzleGrid === "function")
+          renderPuzzleGrid(puzzleSet, grid);
       }
     }
   } catch (e) {}
@@ -239,6 +303,9 @@ export function openPuzzleSet(setId) {
   if (puzzlePage1) puzzlePage1.style.display = "none";
   if (puzzlePage2) puzzlePage2.style.display = "flex";
 
+  // remember which set is open so we can refresh it from pickups
+  _openSetId = setId;
+
   // render pieces into grid
   if (typeof renderPuzzleGrid === "function") renderPuzzleGrid(set, puzzleGrid);
 
@@ -247,14 +314,85 @@ export function openPuzzleSet(setId) {
   const bottom1 = document.getElementById("puzzle-bottom-1");
   const bottom2 = document.getElementById("puzzle-bottom-2");
   if (bottomWrap && bottom1 && bottom2) {
-    if (Array.isArray(set.bottomImages) && set.bottomImages.length >= 2) {
-      bottom1.src = set.bottomImages[0] || "";
-      bottom2.src = set.bottomImages[1] || "";
-      bottomWrap.style.display = "flex";
-    } else {
-      bottom1.src = "";
-      bottom2.src = "";
-      bottomWrap.style.display = "none";
+    try {
+      // If this is an elevator puzzle set, prefer per-floor change state to
+      // compute dynamic bottom images named like:
+      // img/elevtext_(inc)_(up|down).png
+      // img/elevbox_(inc)_(up|down).png
+      // Note: per user request, the "box" image uses the opposite direction
+      // to the elevator "dir" (example: dir=下 -> elevtext_2_down, elevbox_2_up).
+      const isElevator = String(setId || "")
+        .toLowerCase()
+        .startsWith("elevator_");
+      if (isElevator) {
+        // map setId -> floor number (e.g. elevator_1f -> 1, elevator_b1 -> 0)
+        let floor = null;
+        const id = String(setId || "").toLowerCase();
+        if (id.includes("1f")) floor = 1;
+        else if (id.includes("2f")) floor = 2;
+        else if (id.includes("3f")) floor = 3;
+        else if (id.includes("4f")) floor = 4;
+        else if (id.includes("5f")) floor = 5;
+        else if (id.includes("b1")) floor = 0;
+
+        // default images
+        let img1 =
+          (Array.isArray(set.bottomImages) && set.bottomImages[0]) ||
+          "img/elevtext_1_up.png";
+        let img2 =
+          (Array.isArray(set.bottomImages) && set.bottomImages[1]) ||
+          "img/elevbox_1_up.png";
+
+        try {
+          window.__changeState = window.__changeState || {};
+          const per =
+            (window.__changeState.elevatorPerFloor || {})[floor] || null;
+          // Only compute dynamic images when a per-floor config exists.
+          if (per) {
+            // derive stored inc and dir (fall back to reasonable defaults)
+            const storedInc =
+              typeof per.inc === "number" ? Math.max(0, per.inc) : 0;
+            // displayed count is base (1) + storedInc
+            const displayCount = storedInc + 1;
+            const dir =
+              per.dir || per.direction || (per.type === "反転" ? "下" : "上");
+            const dirMap = { 上: "up", 下: "down" };
+            const dirStr = dirMap[dir] || "up";
+            // box image uses opposite direction per user's example
+            const boxOpp = dir === "上" ? "down" : "up";
+
+            img1 = `img/elevtext_${displayCount}_${dirStr}.png`;
+            img2 = `img/elevbox_${displayCount}_${boxOpp}.png`;
+          }
+        } catch (e) {
+          // leave defaults if anything goes wrong
+        }
+
+        // bottom1.src = img1;
+        // bottom2.src = img2;
+        // bottomWrap.style.display = "flex";
+      } else {
+        if (Array.isArray(set.bottomImages) && set.bottomImages.length >= 2) {
+          // bottom1.src = set.bottomImages[0] || "";
+          // bottom2.src = set.bottomImages[1] || "";
+          // bottomWrap.style.display = "flex";
+        } else {
+          // bottom1.src = "";
+          // bottom2.src = "";
+          // bottomWrap.style.display = "none";
+        }
+      }
+    } catch (e) {
+      // fallback to original behavior if something fails
+      if (Array.isArray(set.bottomImages) && set.bottomImages.length >= 2) {
+        // bottom1.src = set.bottomImages[0] || "";
+        // bottom2.src = set.bottomImages[1] || "";
+        // bottomWrap.style.display = "flex";
+      } else {
+        // bottom1.src = "";
+        // bottom2.src = "";
+        // bottomWrap.style.display = "none";
+      }
     }
   }
 }
@@ -294,4 +432,61 @@ export function renderPuzzleGrid(set, container) {
     pieceEl.appendChild(img);
     container.appendChild(pieceEl);
   });
+}
+
+// Serialize puzzle state (unlocked flags and solved answers)
+export function serialize() {
+  try {
+    const out = {};
+    for (const setId of Object.keys(allPuzzles)) {
+      const set = allPuzzles[setId];
+      out[setId] = {
+        unlocked: !!set.unlocked,
+        pieces: {},
+      };
+      if (Array.isArray(set.pieces)) {
+        for (const p of set.pieces) {
+          if (!p || !p.id) continue;
+          out[setId].pieces[p.id] = {
+            unlocked: !!p.unlocked,
+            solvedAnswer:
+              typeof p.solvedAnswer === "string" ? p.solvedAnswer : null,
+          };
+        }
+      }
+    }
+    return out;
+  } catch (e) {
+    console.error("puzzleManager.serialize failed", e);
+    return null;
+  }
+}
+
+// Deserialize puzzle state produced by serialize()
+export function deserialize(payload) {
+  try {
+    if (!payload || typeof payload !== "object") return;
+    for (const setId of Object.keys(payload)) {
+      const savedSet = payload[setId];
+      const set = allPuzzles[setId];
+      if (!set) continue;
+      if (typeof savedSet.unlocked === "boolean")
+        set.unlocked = savedSet.unlocked;
+      if (
+        savedSet.pieces &&
+        typeof savedSet.pieces === "object" &&
+        Array.isArray(set.pieces)
+      ) {
+        for (const p of set.pieces) {
+          const sp = savedSet.pieces[p.id];
+          if (!sp) continue;
+          if (typeof sp.unlocked === "boolean") p.unlocked = sp.unlocked;
+          if (typeof sp.solvedAnswer === "string")
+            p.solvedAnswer = sp.solvedAnswer;
+        }
+      }
+    }
+  } catch (e) {
+    console.error("puzzleManager.deserialize failed", e);
+  }
 }

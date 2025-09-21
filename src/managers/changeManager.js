@@ -236,6 +236,13 @@ export function openChangeModal() {
       const player = window.__playerInstance;
       const floor = player ? player.floor : null;
 
+      // Ensure runtime change state objects exist to avoid indexing undefined
+      window.__changeState = window.__changeState || {};
+      window.__changeState.elevatorPerFloor =
+        window.__changeState.elevatorPerFloor || {};
+      window.__changeState.global = window.__changeState.global || {};
+      window.__changeStateByFloor = window.__changeStateByFloor || {};
+
       // validation helper
       const invalid = () => {
         try {
@@ -594,5 +601,43 @@ export function openChangeModal() {
     });
   } else {
     modal.style.display = "flex";
+  }
+}
+
+// Serialize change-related runtime state
+export function serialize() {
+  try {
+    return {
+      changeState: window.__changeState || null,
+      changeStateByFloor: window.__changeStateByFloor || null,
+    };
+  } catch (e) {
+    console.error("changeManager.serialize failed", e);
+    return null;
+  }
+}
+
+// Deserialize change-related runtime state
+export function deserialize(payload) {
+  try {
+    if (!payload || typeof payload !== "object") return;
+    if (payload.changeState && typeof payload.changeState === "object") {
+      window.__changeState = payload.changeState;
+    } else {
+      window.__changeState = window.__changeState || {
+        elevatorPerFloor: {},
+        global: {},
+      };
+    }
+    if (
+      payload.changeStateByFloor &&
+      typeof payload.changeStateByFloor === "object"
+    ) {
+      window.__changeStateByFloor = payload.changeStateByFloor;
+    } else {
+      window.__changeStateByFloor = window.__changeStateByFloor || {};
+    }
+  } catch (e) {
+    console.error("changeManager.deserialize failed", e);
   }
 }
