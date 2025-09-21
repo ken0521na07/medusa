@@ -2,7 +2,7 @@ import * as mapService from "./mapService.js";
 import * as snakeManager from "./snakeManager.js";
 import { showCustomAlert } from "../ui/modals.js";
 import { renderMagicList, renderInfoList } from "./infoManager.js";
-import { TILE, allInfo, TILE_SIZE } from "../core/constants.js";
+import { TILE, allInfo, TILE_SIZE, ORIGINAL_MAPS } from "../core/constants.js";
 
 export function init() {
   try {
@@ -348,8 +348,17 @@ function _ensureMagicUI() {
     if (isMoveSpell || isMoveSpellAlternate) {
       try {
         const currentTile = mapService.getTile(x, y, floor);
-        const isOnMoveTile =
-          currentTile === TILE.MOVE || currentTile === "move";
+        let isOnMoveTile = currentTile === TILE.MOVE || currentTile === "move";
+        // Fallback: if runtime map lost the marker (e.g. after a death restore),
+        // allow casting if the ORIGINAL_MAPS had a 'move' tile here.
+        try {
+          if (!isOnMoveTile && ORIGINAL_MAPS && ORIGINAL_MAPS[floor]) {
+            const origRow = ORIGINAL_MAPS[floor][y];
+            const origVal = origRow && origRow[x];
+            if (origVal === "move" || origVal === TILE.MOVE)
+              isOnMoveTile = true;
+          }
+        } catch (e) {}
         if (!isOnMoveTile) {
           const msg = "正しい魔法陣の上で唱えよう";
           try {

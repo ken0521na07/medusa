@@ -305,10 +305,10 @@ export default class Player extends GameObject {
         return;
     }
 
-    // Prevent moving into statue tiles: treat any tile string starting with 'statue' as impassable
+    // Prevent moving into statue tiles: change facing only and debounce input
     try {
       if (typeof targetTile === "string" && targetTile.startsWith("statue")) {
-        // show standing frame (do not change facing) and debounce input briefly
+        this.direction = intendedDirection;
         this.animationFrame = 0;
         this.sprite.texture =
           this.textures[this.direction][this.animationFrame];
@@ -322,10 +322,14 @@ export default class Player extends GameObject {
     switch (targetTile) {
       case TILE.WALL:
       case 1:
-        // wall: do not move, show standing frame
+        // wall: change facing to attempted direction, do not move
+        this.direction = intendedDirection;
         this.animationFrame = 0;
         this.sprite.texture =
           this.textures[this.direction][this.animationFrame];
+        try {
+          this._suppressUntil = Date.now() + 300;
+        } catch (e) {}
         return;
       case TILE.HOLE:
       case "hole":
