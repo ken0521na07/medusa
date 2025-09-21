@@ -11,7 +11,7 @@ import {
   renderMagicList,
   renderInfoList, // added to allow refreshing the info list
 } from "../managers/infoManager.js";
-import { openPuzzleModal, showCustomAlert } from "../ui/modals.js";
+import { openPuzzleModal, showCustomAlert, showConfirm } from "../ui/modals.js";
 import {
   TILE,
   allInfo,
@@ -802,6 +802,72 @@ export async function setupUI() {
       ) {
         const key = currentTileType;
         const info = allInfo[key];
+
+        // If this is the change box, ask for confirmation before applying
+        if (key === TILE.BOX_CHANGE || key === "box_change") {
+          try {
+            // show confirmation dialog; on confirm apply pickup and open change modal
+            if (typeof showConfirm === "function") {
+              showConfirm("チェンジを発動しますか？", {
+                onConfirm: () => {
+                  try {
+                    // mark unlocked
+                    if (info && !info.unlocked) info.unlocked = true;
+                    // remove tile
+                    try {
+                      mapService.setTile(x, y, 0);
+                    } catch (e) {}
+                    // notify and persist
+                    try {
+                      emit &&
+                        typeof emit === "function" &&
+                        emit("puzzleChanged");
+                    } catch (e) {}
+                    try {
+                      if (typeof _persistState === "function") _persistState();
+                      else if (typeof _schedulePersist === "function")
+                        _schedulePersist(0);
+                    } catch (e) {}
+                    // refresh magic list UI if open
+                    try {
+                      const list = document.getElementById("magic-list");
+                      if (list && typeof renderMagicList === "function")
+                        renderMagicList(list);
+                    } catch (e) {}
+                    // show pickup alert
+                    try {
+                      const title = info && info.title ? info.title : "魔法";
+                      showCustomAlert(title + "を手に入れた");
+                    } catch (e) {}
+                    // open the change modal
+                    try {
+                      if (
+                        changeManager &&
+                        typeof changeManager.openChangeModal === "function"
+                      )
+                        changeManager.openChangeModal();
+                    } catch (e) {}
+                  } catch (e) {}
+                },
+                onCancel: () => {
+                  // do nothing if cancelled
+                },
+              });
+            } else {
+              // fallback: directly open change modal
+              try {
+                if (
+                  changeManager &&
+                  typeof changeManager.openChangeModal === "function"
+                )
+                  changeManager.openChangeModal();
+              } catch (e) {}
+            }
+          } catch (e) {}
+          return;
+        }
+
+        // default behavior for other box types: immediate pickup
         // ensure info entry exists and mark unlocked
         if (info && !info.unlocked) info.unlocked = true;
         // remove tile from map
@@ -850,6 +916,37 @@ export async function setupUI() {
             );
           } catch (e2) {}
         }
+        return;
+      }
+    } catch (e) {}
+
+    // NEW: handle stepping on a 'change' tile (非箱) to prompt activation
+    try {
+      if (currentTileType === TILE.CHANGE || currentTileType === "change") {
+        try {
+          if (typeof showConfirm === "function") {
+            showConfirm("チェンジを発動しますか？", {
+              onConfirm: () => {
+                try {
+                  if (
+                    changeManager &&
+                    typeof changeManager.openChangeModal === "function"
+                  )
+                    changeManager.openChangeModal();
+                } catch (e) {}
+              },
+              onCancel: () => {},
+            });
+          } else {
+            try {
+              if (
+                changeManager &&
+                typeof changeManager.openChangeModal === "function"
+              )
+                changeManager.openChangeModal();
+            } catch (e) {}
+          }
+        } catch (e) {}
         return;
       }
     } catch (e) {}

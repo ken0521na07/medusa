@@ -162,6 +162,8 @@ html {
   display: flex;
   justify-content: center;
   align-items: center;
+  /* ensure modals appear above the PIXI canvas and game UI */
+  z-index: 10000;
 }
 .modal-wrapper .modal-content {
   background: white;

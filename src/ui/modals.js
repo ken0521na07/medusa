@@ -81,6 +81,81 @@ export function showCustomAlert(
   // never auto-close from codepath: user must close explicitly
 }
 
+// 新規: 確認ダイアログを表示するユーティリティ
+export function showConfirm(
+  message,
+  { onConfirm = null, onCancel = null, allowOverlayClose = true } = {}
+) {
+  let overlay = document.getElementById("confirm-overlay");
+  // create if missing
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "confirm-overlay";
+    overlay.className = "custom-alert-overlay"; // reuse styles
+    overlay.style.display = "none";
+
+    const box = document.createElement("div");
+    box.className = "custom-alert-box";
+
+    const text = document.createElement("div");
+    text.className = "custom-alert-text";
+    text.id = "confirm-text";
+    box.appendChild(text);
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.gap = "8px";
+    actions.style.justifyContent = "flex-end";
+
+    const noBtn = document.createElement("button");
+    noBtn.textContent = "いいえ";
+    noBtn.className = "puzzle-popup-close";
+
+    const yesBtn = document.createElement("button");
+    yesBtn.textContent = "はい";
+    yesBtn.className = "puzzle-submit-btn";
+
+    actions.appendChild(noBtn);
+    actions.appendChild(yesBtn);
+    box.appendChild(actions);
+    overlay.appendChild(box);
+    try {
+      document.body.appendChild(overlay);
+    } catch (e) {}
+
+    // attach basic handlers
+    yesBtn.addEventListener("click", () => {
+      overlay.style.display = "none";
+      if (typeof onConfirm === "function") onConfirm();
+    });
+    noBtn.addEventListener("click", () => {
+      overlay.style.display = "none";
+      if (typeof onCancel === "function") onCancel();
+    });
+
+    if (allowOverlayClose) {
+      setTimeout(() => {
+        overlay.onclick = (e) => {
+          if (e.target === overlay) {
+            overlay.style.display = "none";
+            if (typeof onCancel === "function") onCancel();
+          }
+        };
+      }, 50);
+    }
+  }
+
+  // set message and show
+  try {
+    const text = document.getElementById("confirm-text");
+    if (text) text.textContent = message + "";
+  } catch (e) {}
+  try {
+    overlay.style.zIndex = 20001; // above customAlert
+  } catch (e) {}
+  overlay.style.display = "flex";
+}
+
 export function openPuzzleModal(setId) {
   const puzzleModal = document.getElementById("puzzle-modal");
   if (!puzzleModal) return;

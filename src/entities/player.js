@@ -330,6 +330,16 @@ export default class Player extends GameObject {
             this.textures[this.direction][this.animationFrame];
           this._suppressUntil = Date.now() + 150;
         } catch (e) {}
+
+        // 追加: 向いた方向に蛇が見えている場合は石化させる挙動を復元
+        try {
+          if (this.isSnakeInSight && this.isSnakeInSight()) {
+            try {
+              this.triggerFall("ヘビを見て石化してしまった...！");
+            } catch (e) {}
+          }
+        } catch (e) {}
+
         return;
       }
       if (
@@ -345,6 +355,16 @@ export default class Player extends GameObject {
             this.textures[this.direction][this.animationFrame];
           this._suppressUntil = Date.now() + 150;
         } catch (e) {}
+
+        // 追加: 向いた方向に蛇が見えている場合は石化させる
+        try {
+          if (this.isSnakeInSight && this.isSnakeInSight()) {
+            try {
+              this.triggerFall("ヘビを見て石化してしまった...！");
+            } catch (e) {}
+          }
+        } catch (e) {}
+
         return;
       }
     } catch (e) {}
@@ -393,6 +413,16 @@ export default class Player extends GameObject {
             this._suppressUntil = Date.now() + 150;
           } catch (e) {}
         } catch (e) {}
+
+        // 追加: 壁を向いた時に蛇が視界内にいる場合は石化させる
+        try {
+          if (this.isSnakeInSight && this.isSnakeInSight()) {
+            try {
+              this.triggerFall("ヘビを見て石化してしまった...！");
+            } catch (e) {}
+          }
+        } catch (e) {}
+
         return;
       case TILE.HOLE:
       case "hole":
