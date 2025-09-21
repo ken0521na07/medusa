@@ -243,8 +243,35 @@ function _applyFallenStatueEffects(st, destX, destY, destFloor) {
         if (p.gridX === destX && p.gridY === destY && p.floor === destFloor) {
           // If player is crushed by this falling statue, reset the moved statue
           // only after the death alert is closed. Build a callback to perform the reset.
-          const resetMovedStatue = () => {
+          const resetMovedStatue = async () => {
             try {
+              // Only perform the special reset when this statue was moved via ムーブ
+              if (!st || !st._movedByMove) {
+                try {
+                  // clear any transient flag just in case
+                  if (st) st._movedByMove = false;
+                } catch (e) {}
+                try {
+                  console.log(
+                    "[statue] resetMovedStatue called but _movedByMove is false or statue missing",
+                    {
+                      nameKey: st && st.nameKey,
+                      movedByMove: st && st._movedByMove,
+                    }
+                  );
+                } catch (e) {}
+                return;
+              }
+
+              try {
+                console.log("[statue] resetMovedStatue: performing reset for", {
+                  nameKey: st.nameKey,
+                  initialX: st.initialX,
+                  initialY: st.initialY,
+                  initialFloor: st.initialFloor,
+                });
+              } catch (e) {}
+
               if (st && typeof st.initialX === "number") {
                 try {
                   // clear the destination tile (the broken statue shouldn't remain)
@@ -291,6 +318,122 @@ function _applyFallenStatueEffects(st, destX, destY, destFloor) {
                     );
                   } catch (e) {}
                 } catch (e) {}
+                try {
+                  // clear the transient flag after reset
+                  st._movedByMove = false;
+                } catch (e) {}
+
+                // Persist the reset into saved state so later restoration does not overwrite it
+                try {
+                  const sm = await import("./stateManager.js");
+                  if (
+                    sm &&
+                    typeof sm.load === "function" &&
+                    typeof sm.save === "function"
+                  ) {
+                    try {
+                      const saved = sm.load() || {};
+                      saved.statues = Array.isArray(saved.statues)
+                        ? saved.statues
+                        : [];
+                      // find matching statue entry by nameKey + initialFloor
+                      const idx = saved.statues.findIndex(
+                        (it) =>
+                          it &&
+                          it.nameKey === st.nameKey &&
+                          it.initialFloor === st.initialFloor
+                      );
+                      const newEntry = {
+                        x: st.x,
+                        y: st.y,
+                        floor: st.floor,
+                        nameKey: st.nameKey,
+                        moved: !!st.moved,
+                        removed: !!st.removed,
+                        initialX: st.initialX,
+                        initialY: st.initialY,
+                        initialFloor: st.initialFloor,
+                      };
+                      if (idx >= 0)
+                        saved.statues[idx] = Object.assign(
+                          saved.statues[idx] || {},
+                          newEntry
+                        );
+                      else saved.statues.push(newEntry);
+
+                      // Also patch saved.map (if present) to ensure deserializing the map
+                      // won't restore the broken statue tile. mapService.serialize stores
+                      // maps under saved.map.maps.
+                      try {
+                        if (saved.map && saved.map.maps) {
+                          const mapsObj = saved.map.maps;
+                          const setTileInSavedMap = (xx, yy, ff, val) => {
+                            try {
+                              const fk = String(ff);
+                              if (
+                                mapsObj[fk] &&
+                                Array.isArray(mapsObj[fk]) &&
+                                Array.isArray(mapsObj[fk][yy])
+                              ) {
+                                mapsObj[fk][yy][xx] = val;
+                                return true;
+                              }
+                            } catch (e) {}
+                            return false;
+                          };
+
+                          // clear dest tile (broken statue) and set statue at initial
+                          try {
+                            const cleared = setTileInSavedMap(
+                              destX,
+                              destY,
+                              destFloor,
+                              0
+                            );
+                            const placed = setTileInSavedMap(
+                              st.initialX,
+                              st.initialY,
+                              st.initialFloor,
+                              st.nameKey
+                            );
+                            console.log(
+                              "[statue] patched saved.map: cleared dest?",
+                              !!cleared,
+                              "placed at initial?",
+                              !!placed
+                            );
+                          } catch (e) {
+                            console.error(
+                              "statueManager: failed patching saved.map",
+                              e
+                            );
+                          }
+                        }
+                      } catch (e) {}
+
+                      try {
+                        sm.save(saved);
+                        console.log(
+                          "[statue] persisted reset to save file for",
+                          {
+                            nameKey: st.nameKey,
+                            to: { x: st.x, y: st.y, floor: st.floor },
+                          }
+                        );
+                      } catch (e) {
+                        console.error(
+                          "statueManager: failed to save updated state",
+                          e
+                        );
+                      }
+                    } catch (e) {
+                      console.error(
+                        "statueManager: failed updating saved statues",
+                        e
+                      );
+                    }
+                  }
+                } catch (e) {}
               }
             } catch (e) {}
           };
@@ -300,6 +443,17 @@ function _applyFallenStatueEffects(st, destX, destY, destFloor) {
               try {
                 p.triggerFall("像の落下で轢かれてしまった...", {
                   onClose: resetMovedStatue,
+                  fallCause: {
+                    movedByMoveStatue: {
+                      nameKey: st.nameKey,
+                      initialX: st.initialX,
+                      initialY: st.initialY,
+                      initialFloor: st.initialFloor,
+                      destX,
+                      destY,
+                      destFloor,
+                    },
+                  },
                 });
               } catch (err) {
                 console.error("triggerFall failed on player", err);
@@ -308,6 +462,17 @@ function _applyFallenStatueEffects(st, destX, destY, destFloor) {
           } else {
             p.triggerFall("像の落下で轢かれてしまった...", {
               onClose: resetMovedStatue,
+              fallCause: {
+                movedByMoveStatue: {
+                  nameKey: st.nameKey,
+                  initialX: st.initialX,
+                  initialY: st.initialY,
+                  initialFloor: st.initialFloor,
+                  destX,
+                  destY,
+                  destFloor,
+                },
+              },
             });
           }
         }
@@ -492,6 +657,17 @@ export function handleMoveByDisplayName(displayName, dir) {
               mapService.setTile(oldX2, oldY2, 0, s2.floor);
             } catch (e) {}
 
+            // mark as moved-by-move so death resets only move-caused statues
+            try {
+              s2._movedByMove = true;
+              console.log("[statue] mark _movedByMove for s2", {
+                nameKey: s2.nameKey,
+                x: s2.x,
+                y: s2.y,
+                floor: s2.floor,
+              });
+            } catch (e) {}
+
             // apply shared fall effects so snake kill and alerts occur
             try {
               _applyFallenStatueEffects(s2, destX2, destY2, destFloor2);
@@ -600,6 +776,17 @@ export function handleMoveByDisplayName(displayName, dir) {
             mapService.setTile(oldX6, oldY6, 0, 6);
           } catch (e) {}
 
+          // mark as moved-by-move so death resets only move-caused statues
+          try {
+            s6._movedByMove = true;
+            console.log("[statue] mark _movedByMove for s6", {
+              nameKey: s6.nameKey,
+              x: s6.x,
+              y: s6.y,
+              floor: s6.floor,
+            });
+          } catch (e) {}
+
           // use shared effect helper so statue_m behaves identically to other statues
           try {
             _applyFallenStatueEffects(s6, destX6, destY6, destFloor6);
@@ -618,6 +805,7 @@ export function handleMoveByDisplayName(displayName, dir) {
           } catch (e) {}
         }
       }
+      return { ok: true };
     }
     return { ok: true };
   };
@@ -708,6 +896,9 @@ export function handleMoveByDisplayName(displayName, dir) {
       } catch (e) {}
 
       // shared fall handling
+      try {
+        st._movedByMove = true;
+      } catch (e) {}
       _applyFallenStatueEffects(st, destX, destY, destFloor);
 
       return { ok: true };
@@ -726,6 +917,10 @@ export function handleMoveByDisplayName(displayName, dir) {
     } catch (e) {}
     try {
       st.moved = true;
+      // clear moved-by-move flag for normal non-falling move
+      try {
+        st._movedByMove = false;
+      } catch (e) {}
     } catch (e) {}
     return { ok: true };
   };

@@ -159,10 +159,27 @@ export default class Player extends GameObject {
   // so the renderer can show the player stepping onto the tile first.
   // options: { onClose: function } -- optional callback to run after the built-in death handling when the alert is closed
   triggerFall(message, options = {}) {
-    const doOnClose = () => {
+    const doOnClose = async () => {
       try {
-        this.mapService.onFall();
+        // call optional external onClose first so it can modify runtime and persisted state
+        if (options && typeof options.onClose === "function") {
+          try {
+            await Promise.resolve(options.onClose());
+          } catch (e) {}
+        }
       } catch (e) {}
+
+      try {
+        // ensure mapService.onFall completes after external onClose
+        if (this.mapService && typeof this.mapService.onFall === "function") {
+          try {
+            await Promise.resolve(this.mapService.onFall(options));
+          } catch (e) {
+            // continue even if restore fails
+          }
+        }
+      } catch (e) {}
+
       // reset snake positions to their initial state when player dies
       try {
         if (typeof snakeManager.resetPositions === "function") {
@@ -182,14 +199,6 @@ export default class Player extends GameObject {
         } else {
           // fallback to global START_* constants
           this.teleport(START_POS_X, START_POS_Y, START_FLOOR);
-        }
-      } catch (e) {}
-      // call optional external onClose after internal death handling
-      try {
-        if (options && typeof options.onClose === "function") {
-          try {
-            options.onClose();
-          } catch (e) {}
         }
       } catch (e) {}
     };
@@ -295,6 +304,20 @@ export default class Player extends GameObject {
         this.triggerFall("メドゥーサを見て石化してしまった...！");
         return;
     }
+
+    // Prevent moving into statue tiles: treat any tile string starting with 'statue' as impassable
+    try {
+      if (typeof targetTile === "string" && targetTile.startsWith("statue")) {
+        // show standing frame (do not change facing) and debounce input briefly
+        this.animationFrame = 0;
+        this.sprite.texture =
+          this.textures[this.direction][this.animationFrame];
+        try {
+          this._suppressUntil = Date.now() + 300;
+        } catch (e) {}
+        return;
+      }
+    } catch (e) {}
 
     switch (targetTile) {
       case TILE.WALL:
