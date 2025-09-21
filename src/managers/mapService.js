@@ -48,9 +48,35 @@ export function getMapImage(floor = currentFloor) {
 }
 
 export function onFall() {
-  // simple behavior: reset current floor map and notify via console for now
-  console.log("player fell into hole on floor", currentFloor);
-  resetMap(currentFloor);
+  // When the player falls, reload the page in a browser to ensure the renderer
+  // fully refreshes and avoids visual artifacts. If running in a non-browser
+  // environment, fall back to resetting the current floor map.
+  try {
+    console.log(
+      "player fell: attempting to reload page to refresh map visuals"
+    );
+    if (
+      typeof window !== "undefined" &&
+      window.location &&
+      typeof window.location.reload === "function"
+    ) {
+      // Use reload(true) not supported everywhere; just call reload()
+      try {
+        window.location.reload();
+        return;
+      } catch (e) {
+        // ignore and fall back
+      }
+    }
+  } catch (e) {}
+
+  // fallback: reset current floor map
+  try {
+    console.log("player fell: fallback reset current floor map", currentFloor);
+    resetMap(currentFloor);
+  } catch (e) {
+    console.log("player fell fallback reset failed", e);
+  }
 }
 
 export function serialize() {
