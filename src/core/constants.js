@@ -432,7 +432,7 @@ export const allPuzzles = {
   elevator_1f: {
     title: "謎|1F",
     unlocked: false,
-    bottomImages: ["img/1f_answer.png", "img/elev_1_up.png"],
+    bottomImages: ["img/elevtext_1_up.png", "img/elevbox_1_up.png"],
     pieces: [
       {
         id: TILE.PUZZLE_1H,
@@ -463,7 +463,7 @@ export const allPuzzles = {
   elevator_2f: {
     title: "謎|2F",
     unlocked: false,
-    bottomImages: ["img/1f_answer.png", "img/elev_1_up.png"],
+    bottomImages: ["img/elevtext_1_up.png", "img/elevbox_1_up.png"],
     pieces: [
       {
         id: TILE.PUZZLE_2H,
@@ -494,7 +494,7 @@ export const allPuzzles = {
   elevator_3f: {
     title: "謎|3F",
     unlocked: false,
-    bottomImages: ["img/1f_answer.png", "img/elev_1_up.png"],
+    bottomImages: ["img/elevtext_1_up.png", "img/elevbox_1_up.png"],
     pieces: [
       {
         id: "3f_heart",
@@ -525,7 +525,7 @@ export const allPuzzles = {
   elevator_4f: {
     title: "謎|4F",
     unlocked: false,
-    bottomImages: ["img/1f_answer.png", "img/elev_1_up.png"],
+    bottomImages: ["img/elevtext_1_up.png", "img/elevbox_1_up.png"],
     pieces: [
       {
         id: TILE.PUZZLE_4H,
@@ -558,7 +558,7 @@ export const allPuzzles = {
   elevator_5f: {
     title: "謎|5F",
     unlocked: false,
-    bottomImages: ["img/1f_answer.png", "img/elev_1_up.png"],
+    bottomImages: ["img/elevtext_1_up.png", "img/elevbox_1_up.png"],
     pieces: [
       {
         id: "5f_heart",
@@ -591,7 +591,7 @@ export const allPuzzles = {
   elevator_b1: {
     title: "謎|B1F",
     unlocked: false,
-    bottomImages: ["img/1f_answer.png", "img/elev_1_up.png"],
+    bottomImages: ["img/elevtext_1_up.png", "img/elevbox_1_up.png"],
     pieces: [
       {
         id: "b1_heart",
