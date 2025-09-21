@@ -1451,19 +1451,64 @@ export async function setupUI() {
           TILE.PUZZLE_B1,
         ];
 
-        // remove any existing overlay if tile no longer of interest
-        if (!tile || !(boxKeys.includes(tile) || puzzleKeys.includes(tile))) {
+        // Determine original map tile at this location (based on ORIGINAL_MAPS)
+        let origTile = null;
+        try {
+          const om = ORIGINAL_MAPS || {};
+          const floorMap = om[f] || om[String(f)];
+          if (
+            Array.isArray(floorMap) &&
+            floorMap[y] &&
+            typeof floorMap[y][x] !== "undefined"
+          ) {
+            origTile = floorMap[y][x];
+          }
+        } catch (e) {
+          origTile = null;
+        }
+
+        // If neither current tile nor original tile indicate interest, remove any overlay
+        const isCurrentBox = boxKeys.includes(tile);
+        const isCurrentPuzzle = puzzleKeys.includes(tile);
+        // original box present (on the original map) and unlocked -> still show opened overlay
+        const origIsBox =
+          typeof origTile === "string" && boxKeys.includes(origTile);
+        const origBoxKey = origIsBox ? origTile : null;
+        const shouldShowBecauseOfOriginalUnlocked =
+          origIsBox &&
+          allInfo &&
+          allInfo[origBoxKey] &&
+          !!allInfo[origBoxKey].unlocked;
+
+        if (
+          !isCurrentBox &&
+          !isCurrentPuzzle &&
+          !shouldShowBecauseOfOriginalUnlocked
+        ) {
           _removeOverlayKey(key);
           return;
         }
 
         let imgPath = null;
         // boxes: show closed or opened depending on allInfo unlocked
-        if (boxKeys.includes(tile)) {
-          const infoKey = typeof tile === "string" ? tile : null;
+        if (isCurrentBox || origIsBox) {
+          // determine which info key to consult: prefer current tile if string, else original
+          const infoKey =
+            typeof tile === "string" && boxKeys.includes(tile)
+              ? tile
+              : origBoxKey;
           const info = infoKey && allInfo[infoKey] ? allInfo[infoKey] : null;
           const opened = info && info.unlocked;
-          imgPath = opened ? "img/box_opened.png" : "img/box.png";
+          // If the current runtime tile is a box, show its state; otherwise (tile removed) only show opened when unlocked
+          if (isCurrentBox) {
+            imgPath = opened ? "img/box_opened.png" : "img/box.png";
+          } else if (origIsBox && opened) {
+            // tile was removed but original was a box and it was unlocked -> show opened
+            imgPath = "img/box_opened.png";
+          } else {
+            // don't show closed box if it doesn't exist at runtime
+            imgPath = null;
+          }
         }
 
         // puzzles: show suit-specific for single-piece tiles, puzzle.png for set tiles
