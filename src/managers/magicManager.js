@@ -4,6 +4,25 @@ import { showCustomAlert } from "../ui/modals.js";
 import { renderMagicList, renderInfoList } from "./infoManager.js";
 import { TILE, allInfo, TILE_SIZE } from "../core/constants.js";
 
+// Ensure native alert calls route to the app's custom alert instead of using the blocking native alert.
+try {
+  if (typeof window !== "undefined" && typeof showCustomAlert === "function") {
+    const _origAlert = window.alert;
+    window.alert = function (msg) {
+      try {
+        showCustomAlert(String(msg));
+      } catch (e) {
+        // If custom alert fails for any reason, fall back to console logging but do NOT show native alert
+        try {
+          console.log("[alert->custom failed]", msg);
+        } catch (e2) {}
+      }
+    };
+    // keep a reference if needed elsewhere
+    window.__orig_alert = _origAlert;
+  }
+} catch (e) {}
+
 export function init() {
   try {
     _ensureMagicUI();
@@ -320,6 +339,10 @@ function _ensureMagicUI() {
     const moveIsInverted = (() => {
       const c = moveChangeCfg;
       if (!c) return false;
+      // Prefer explicit opt field when available (newer saved format)
+      if (typeof c.opt !== "undefined" && c.opt !== null) {
+        return String(c.opt) === "違う";
+      }
       if (c.type === "反転") return true;
       if (c.invert === true || c.reversed === true || c.revert === true)
         return true;
@@ -395,7 +418,18 @@ function _ensureMagicUI() {
             rawTyped: raw,
           });
         } catch (e) {}
-        openMoveModal();
+        try {
+          if (
+            typeof window !== "undefined" &&
+            typeof window.openMoveModal === "function"
+          ) {
+            window.openMoveModal();
+          } else if (typeof openMoveModal === "function") {
+            openMoveModal();
+          } else {
+            console.warn("openMoveModal is not available");
+          }
+        } catch (e) {}
         return;
       } catch (e) {
         console.error("isMoveSpell handler failed:", e);
@@ -550,223 +584,17 @@ function _ensureMagicUI() {
   });
 }
 
-// Move modal and Change modal follow - these are used by checkMagic when opening dialogs
-function openMoveModal() {
-  // recreate the original modal logic from uiSetup.js but scoped here
-  let modal = document.getElementById("move-modal");
-  if (!modal) {
-    modal = document.createElement("div");
-    modal.id = "move-modal";
-    modal.className = "modal-wrapper";
-    modal.style.display = "flex";
-    modal.style.position = "fixed";
-    modal.style.left = "0";
-    modal.style.top = "0";
-    modal.style.width = "100%";
-    modal.style.height = "100%";
-    modal.style.alignItems = "center";
-    modal.style.justifyContent = "center";
-    modal.style.zIndex = 25000;
-
-    const box = document.createElement("div");
-    box.className = "modal-content";
-    box.style.padding = "12px";
-    box.style.background = "#fff";
-    box.style.borderRadius = "6px";
-    box.style.display = "flex";
-    box.style.flexDirection = "column";
-    box.style.gap = "8px";
-    box.style.minWidth = "240px";
-
-    const p1 = document.createElement("div");
-    // decide description based on current チェンジの状況 for ムーブ
-    let moveChangeCfg = null;
-    try {
-      const player = window.__playerInstance;
-      const floor = player ? player.floor : null;
-      const perFloorMove =
-        window.__changeStateByFloor && window.__changeStateByFloor[floor]
-          ? window.__changeStateByFloor[floor]["ムーブ"]
-          : null;
-      const globalMove =
-        window.__changeState && window.__changeState.global
-          ? window.__changeState.global["ムーブ"] ||
-            window.__changeState.global["move"]
-          : null;
-      moveChangeCfg = perFloorMove || globalMove;
-      try {
-        console.log("[move modal] moveChangeCfg", {
-          floor,
-          perFloorMove,
-          globalMove,
-          moveChangeCfg,
-        });
-      } catch (e) {}
-    } catch (e) {}
-
-    const moveIsInverted = (() => {
-      const c = moveChangeCfg;
-      if (!c) return false;
-      if (c.type === "反転") return true;
-      if (c.invert === true || c.reversed === true || c.revert === true)
-        return true;
-      if (c.dir === "下" || c.direction === "下") return true;
-      return false;
-    })();
-
-    p1.textContent = moveIsInverted
-      ? "ムーブを使用する像の名前を入力してください（別の階の像も指定可能）"
-      : "ムーブを使用する像の名前を入力してください（同じ階の像のみ指定可能）";
-    box.appendChild(p1);
-
-    const nameInput = document.createElement("input");
-    nameInput.placeholder = "像の名前";
-    nameInput.id = "move-name-input";
-    box.appendChild(nameInput);
-
-    const p2 = document.createElement("div");
-    p2.textContent = "像を動かす方向を入力してください";
-    box.appendChild(p2);
-
-    const select = document.createElement("select");
-    select.id = "move-direction-select";
-    ["東", "西", "南", "北"].forEach((d) => {
-      const opt = document.createElement("option");
-      opt.value = d;
-      opt.textContent = d;
-      select.appendChild(opt);
-    });
-    box.appendChild(select);
-
-    const submit = document.createElement("button");
-    submit.textContent = "送信";
-    box.appendChild(submit);
-
-    const close = document.createElement("button");
-    close.textContent = "閉じる";
-    box.appendChild(close);
-
-    modal.appendChild(box);
-    document.body.appendChild(modal);
-
-    close.addEventListener("click", () => {
-      modal.style.display = "none";
-    });
-    submit.addEventListener("click", () => {
-      const name = (nameInput.value || "").trim();
-      const dir = select.value;
-
-      // delegate statue move to statueManager which handles display-name -> key mapping
-      try {
-        if (
-          window.__statueManager &&
-          typeof window.__statueManager.handleMoveByDisplayName === "function"
-        ) {
-          const res = window.__statueManager.handleMoveByDisplayName(name, dir);
-          if (!res || res.ok === false) {
-            modal.style.display = "none";
-            try {
-              showCustomAlert((res && res.msg) || "その像は動かせないようだ");
-            } catch (e) {}
-            return;
-          }
-        } else {
-          // fallback: dispatch custom event for older code paths
-          const ev = new CustomEvent("moveStatue", { detail: { name, dir } });
-          window.dispatchEvent(ev);
-        }
-      } catch (e) {
-        console.error("move modal submit failed", e);
-      }
-
-      try {
-        showCustomAlert("「ムーブ」を唱え、像を移動した。");
-      } catch (e) {}
-      modal.style.display = "none";
-    });
-  } else {
-    modal.style.display = "flex";
-  }
-}
-
-function openChangeModal() {
-  // To keep this refactor focused, reuse existing modal creation logic from uiSetup.js
-  // We'll create a minimal wrapper that shows the original modal if present or constructs it.
-  // For brevity the full complex change modal is omitted here; we recreate a simpler version
-  let modal = document.getElementById("change-modal");
-  if (!modal) {
-    modal = document.createElement("div");
-    modal.id = "change-modal";
-    modal.className = "modal-wrapper";
-    modal.style.display = "flex";
-    modal.style.position = "fixed";
-    modal.style.left = "0";
-    modal.style.top = "0";
-    modal.style.width = "100%";
-    modal.style.height = "100%";
-    modal.style.alignItems = "center";
-    modal.style.justifyContent = "center";
-    modal.style.zIndex = 25000;
-
-    const box = document.createElement("div");
-    box.className = "modal-content";
-    box.style.padding = "16px";
-    box.style.background = "#fff";
-    box.style.borderRadius = "6px";
-    box.style.display = "flex";
-    box.style.flexDirection = "column";
-    box.style.gap = "8px";
-    box.style.minWidth = "240px";
-
-    const t1 = document.createElement("div");
-    t1.textContent = "チェンジ用の簡易ダイアログ。詳細は開発用。";
-    box.appendChild(t1);
-
-    const close = document.createElement("button");
-    close.textContent = "閉じる";
-    close.addEventListener("click", () => {
-      modal.style.display = "none";
-    });
-    box.appendChild(close);
-
-    modal.appendChild(box);
-    document.body.appendChild(modal);
-  } else {
-    modal.style.display = "flex";
-  }
-}
-
+// Minimal persistence helpers used elsewhere. Keep these robust and side-effect free.
 export function serialize() {
   try {
-    return {
-      cushionState: window.__cushionState || null,
-      cushionMap: window.__cushionMap || null,
-    };
+    return window.__magicState || {};
   } catch (e) {
-    console.error("magicManager.serialize failed", e);
-    return null;
+    return {};
   }
 }
 
-export function deserialize(payload) {
+export function deserialize(obj) {
   try {
-    if (!payload || typeof payload !== "object") return;
-    if (payload.cushionState && typeof payload.cushionState === "object") {
-      window.__cushionState = payload.cushionState;
-    } else {
-      window.__cushionState = window.__cushionState || {
-        active: false,
-        remainingSteps: 0,
-      };
-    }
-    if (payload.cushionMap && typeof payload.cushionMap === "object") {
-      window.__cushionMap = payload.cushionMap;
-    } else {
-      window.__cushionMap = window.__cushionMap || {};
-    }
-  } catch (e) {
-    console.error("magicManager.deserialize failed", e);
-  }
+    window.__magicState = obj || {};
+  } catch (e) {}
 }
-
-export default { init };

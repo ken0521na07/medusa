@@ -3,7 +3,7 @@ import { MAPS, STATUE_DISPLAY, TILE, TILE_SIZE } from "../core/constants.js";
 import * as mapService from "./mapService.js";
 import * as snakeManager from "./snakeManager.js";
 import { showCustomAlert } from "../ui/modals.js";
-import { on, off } from "../core/eventBus.js";
+import { on, off, emit } from "../core/eventBus.js";
 
 let statues = [];
 let _appLayers = null;
@@ -44,6 +44,47 @@ function _ensureSpritesMatchMap() {
   } catch (e) {}
 }
 
+// Helper: remove any statue model/sprite at a given coord (except optional excluded statue)
+function _removeStatueAt(x, y, floor, excludeStatue) {
+  try {
+    for (const s of statues) {
+      try {
+        if (
+          !s ||
+          (excludeStatue && s === excludeStatue) ||
+          s.x !== x ||
+          s.y !== y ||
+          s.floor !== floor
+        )
+          continue;
+        // clear tile
+        try {
+          mapService.setTile(x, y, 0, floor);
+        } catch (e) {}
+        // remove sprite if present
+        try {
+          if (s.obj && s.obj.sprite) {
+            if (
+              s.obj.sprite.parent &&
+              typeof s.obj.sprite.parent.removeChild === "function"
+            ) {
+              s.obj.sprite.parent.removeChild(s.obj.sprite);
+            }
+            try {
+              s.obj.sprite.visible = false;
+              // make non-interactive so it cannot receive A-button
+              if (typeof s.obj.sprite.interactive !== "undefined")
+                s.obj.sprite.interactive = false;
+            } catch (e) {}
+          }
+        } catch (e) {}
+        s.removed = true;
+        s.obj = null;
+      } catch (e) {}
+    }
+  } catch (e) {}
+}
+
 export async function init(appLayers) {
   _appLayers = appLayers;
   statues = [];
@@ -72,6 +113,10 @@ export async function init(appLayers) {
                 initialFloor: floor,
                 // remember original texture path for reset
                 originalTexturePath: "img/statue.png",
+                // runtime flags
+                moved: false,
+                removed: false,
+                broken: false,
               });
             } catch (e) {
               console.error("statueManager.init: failed to create statue", e);
@@ -157,6 +202,15 @@ export function syncVisibility(floor) {
 // shared helper to apply effects when a statue falls (texture swap, player death, snake kill, alerts)
 function _applyFallenStatueEffects(st, destX, destY, destFloor) {
   try {
+    // Prevent autosave while we manipulate map/statue state to avoid races
+    try {
+      if (typeof window !== "undefined") window.__skipSaving = true;
+    } catch (e) {}
+
+    // Track if we schedule a deferred restore (via triggerFall onClose). If so,
+    // keep __skipSaving true until that onClose handler runs and clears it.
+    let deferredRestoreScheduled = false;
+
     // If another statue already occupies the destination, remove its sprite/object
     try {
       const existing = statues.find(
@@ -168,63 +222,231 @@ function _applyFallenStatueEffects(st, destX, destY, destFloor) {
           s.floor === destFloor
       );
       if (existing) {
-        try {
-          if (existing.obj && existing.obj.sprite) {
-            // remove from display list if attached
+        if (existing.obj && existing.obj.sprite) {
+          try {
             if (
               existing.obj.sprite.parent &&
               typeof existing.obj.sprite.parent.removeChild === "function"
             ) {
               existing.obj.sprite.parent.removeChild(existing.obj.sprite);
             }
+            existing.obj.sprite.visible = false;
+          } catch (e) {}
+        }
+        existing.removed = true;
+        existing.obj = null;
+      }
+    } catch (e) {}
+
+    // If the player is standing on the destination where the statue would land,
+    // restore the moved statue to its original position immediately and then
+    // trigger the player's death modal. Do NOT place the broken statue at the
+    // destination in this exceptional case.
+    try {
+      const p =
+        typeof window !== "undefined" && window.__playerInstance
+          ? window.__playerInstance
+          : null;
+      if (
+        p &&
+        p.gridX === destX &&
+        p.gridY === destY &&
+        p.floor === destFloor
+      ) {
+        // clear any tile at the destination
+        try {
+          mapService.setTile(destX, destY, 0, destFloor);
+        } catch (e) {}
+        // restore statue tile at its initial position
+        try {
+          mapService.setTile(
+            st.initialX,
+            st.initialY,
+            st.nameKey,
+            st.initialFloor
+          );
+        } catch (e) {}
+
+        // update model and sprite (recreate if necessary)
+        st.x = st.initialX;
+        st.y = st.initialY;
+        st.floor = st.initialFloor;
+        try {
+          if (st.obj) {
+            st.obj.gridX = st.initialX;
+            st.obj.gridY = st.initialY;
             try {
-              existing.obj.sprite.visible = false;
+              const origTex = PIXI.Texture.from(
+                st.originalTexturePath || "img/statue.png"
+              );
+              if (origTex) st.obj.sprite.texture = origTex;
+            } catch (e) {}
+            try {
+              st.obj.sprite.visible = st.floor === mapService.getFloor();
+            } catch (e) {}
+            try {
+              st.obj.updatePixelPosition();
+            } catch (e) {}
+          } else {
+            try {
+              const g = new GameObject(
+                st.initialX,
+                st.initialY,
+                st.originalTexturePath || "img/statue.png"
+              );
+              g.sprite.visible = st.floor === mapService.getFloor();
+              if (_appLayers && _appLayers.entityLayer)
+                _appLayers.entityLayer.addChild(g.sprite);
+              st.obj = g;
+              try {
+                st.obj.gridX = st.initialX;
+                st.obj.gridY = st.initialY;
+                st.obj.updatePixelPosition();
+              } catch (e) {}
             } catch (e) {}
           }
         } catch (e) {}
+
+        st.moved = false;
+        st.broken = false;
+        st.removed = false;
+
+        // Notify that statue state changed so autosave can persist the restoration
         try {
-          existing.removed = true;
-          existing.obj = null;
+          if (typeof emit === "function") {
+            try {
+              emit("statueChanged", { statue: st });
+            } catch (e) {}
+            try {
+              emit("playerMoved", { reason: "statueRestored" });
+            } catch (e) {}
+            try {
+              emit("floorChanged", st.floor);
+            } catch (e) {}
+          }
+        } catch (e) {}
+
+        // Do NOT clear skipSaving yet. Instead mark that a deferred restore/save
+        // will be performed when the death modal closes so we don't persist any
+        // intermediate state. The onClose handler below will clear __skipSaving
+        // and re-emit events to trigger the autosave.
+        try {
+          deferredRestoreScheduled = true;
+        } catch (e) {}
+        try {
+          // mark statue as pending restore so serialize() can avoid saving
+          // the intermediate broken/moved location
+          try {
+            st.__deferredRestore = true;
+          } catch (e) {}
+        } catch (e) {}
+
+        // Show player's death modal after restoring the statue state
+        try {
+          const onCloseAfterRestore = () => {
+            try {
+              // allow autosave now and notify systems so the final correct state
+              // is persisted by the normal autosave handlers
+              try {
+                if (typeof window !== "undefined") window.__skipSaving = false;
+              } catch (e) {}
+              try {
+                // clear pending restore marker so future saves behave normally
+                st.__deferredRestore = false;
+              } catch (e) {}
+              if (typeof emit === "function") {
+                try {
+                  emit("statueChanged", { statue: st });
+                } catch (e) {}
+                try {
+                  emit("playerMoved", { reason: "statueRestoreOnClose" });
+                } catch (e) {}
+                try {
+                  emit("floorChanged", st.floor);
+                } catch (e) {}
+              }
+            } catch (e) {}
+          };
+
+          if (typeof p.triggerFall === "function") {
+            try {
+              // PASS the correct onClose handler (was incorrectly using onCloseReset)
+              p.triggerFall("像の落下で轢かれてしまった...", {
+                onClose: onCloseAfterRestore,
+              });
+            } catch (e) {
+              try {
+                p.triggerFall("像の落下で轢かれてしまった...");
+              } catch (ee) {}
+            }
+          } else {
+            try {
+              showCustomAlert("像の落下で轢かれてしまった...", {
+                onClose: onCloseAfterRestore,
+                allowOverlayClose: false,
+              });
+            } catch (e) {
+              try {
+                showCustomAlert("像の落下で轢かれてしまった...");
+              } catch (ee) {}
+            }
+          }
         } catch (e) {}
       }
     } catch (e) {}
 
-    // place statue on destination tile
+    // Normal fall: place statue on destination tile and mark broken
     try {
       mapService.setTile(destX, destY, st.nameKey, destFloor);
     } catch (e) {}
-
-    // update statue model and sprite
     st.x = destX;
     st.y = destY;
     st.floor = destFloor;
+
     try {
-      st.obj.gridX = destX;
-      st.obj.gridY = destY;
-      st.obj.sprite.visible = st.floor === mapService.getFloor();
-      try {
-        const brokenTex = PIXI.Texture.from("img/statue_broken.png");
-        if (brokenTex) {
-          st.obj.sprite.texture = brokenTex;
+      if (st.obj) {
+        st.obj.gridX = destX;
+        st.obj.gridY = destY;
+        try {
+          const brokenTex = PIXI.Texture.from("img/statue_broken.png");
+          if (brokenTex) st.obj.sprite.texture = brokenTex;
           try {
             st.obj.sprite.width =
               typeof TILE_SIZE === "number" ? TILE_SIZE : st.obj.sprite.width;
             st.obj.sprite.height =
               typeof TILE_SIZE === "number" ? TILE_SIZE : st.obj.sprite.height;
           } catch (e) {}
-        }
-      } catch (e) {
-        console.error("failed to set broken statue texture", e);
+        } catch (e) {}
+        try {
+          st.obj.sprite.visible = st.floor === mapService.getFloor();
+        } catch (e) {}
+        try {
+          st.obj.updatePixelPosition();
+        } catch (e) {}
+      } else {
+        try {
+          const g = new GameObject(destX, destY, "img/statue_broken.png");
+          g.sprite.visible = st.floor === mapService.getFloor();
+          if (_appLayers && _appLayers.entityLayer)
+            _appLayers.entityLayer.addChild(g.sprite);
+          st.obj = g;
+        } catch (e) {}
       }
-      st.obj.updatePixelPosition();
-    } catch (e) {
-      console.error("failed to update statue object after fall", e);
-    }
+    } catch (e) {}
 
-    // mark as moved/broken
+    st.moved = true;
     try {
-      st.moved = true;
-      st.obj.broken = true;
+      if (st.obj) st.obj.broken = true;
+    } catch (e) {}
+    st.broken = true;
+    try {
+      // broken statue should not respond to interactions (A-button/etc.)
+      if (st.obj && st.obj.sprite) {
+        try {
+          if (typeof st.obj.sprite.interactive !== "undefined")
+            st.obj.sprite.interactive = false;
+        } catch (e) {}
+      }
     } catch (e) {}
 
     try {
@@ -236,85 +458,158 @@ function _applyFallenStatueEffects(st, destX, destY, destFloor) {
       });
     } catch (e) {}
 
-    // player death check
+    // If player ended up on the destination (defensive), schedule immediate restore via triggerFall onClose
     try {
-      if (window && window.__playerInstance) {
-        const p = window.__playerInstance;
-        if (p.gridX === destX && p.gridY === destY && p.floor === destFloor) {
-          // If player is crushed by this falling statue, reset the moved statue
-          // only after the death alert is closed. Build a callback to perform the reset.
-          const resetMovedStatue = () => {
+      const p =
+        typeof window !== "undefined" && window.__playerInstance
+          ? window.__playerInstance
+          : null;
+      if (
+        p &&
+        p.gridX === destX &&
+        p.gridY === destY &&
+        p.floor === destFloor
+      ) {
+        const resetMovedStatue = () => {
+          try {
             try {
-              if (st && typeof st.initialX === "number") {
+              mapService.setTile(destX, destY, 0, destFloor);
+            } catch (e) {}
+            try {
+              mapService.setTile(
+                st.initialX,
+                st.initialY,
+                st.nameKey,
+                st.initialFloor
+              );
+            } catch (e) {}
+            st.x = st.initialX;
+            st.y = st.initialY;
+            st.floor = st.initialFloor;
+            if (st.obj) {
+              try {
+                const origTex = PIXI.Texture.from(
+                  st.originalTexturePath || "img/statue.png"
+                );
+                if (origTex) st.obj.sprite.texture = origTex;
+              } catch (e) {}
+              try {
+                st.obj.sprite.visible = st.floor === mapService.getFloor();
+              } catch (e) {}
+              try {
+                st.obj.updatePixelPosition();
+              } catch (e) {}
+            } else {
+              try {
+                const g = new GameObject(
+                  st.initialX,
+                  st.initialY,
+                  st.originalTexturePath || "img/statue.png"
+                );
+                g.sprite.visible = st.floor === mapService.getFloor();
+                if (_appLayers && _appLayers.entityLayer)
+                  _appLayers.entityLayer.addChild(g.sprite);
+                st.obj = g;
+              } catch (e) {}
+            }
+            st.moved = false;
+            if (st.obj) st.obj.broken = false;
+            st.removed = false;
+          } catch (e) {}
+
+          // persist restored statue state
+          try {
+            if (typeof emit === "function") {
+              try {
+                emit("statueChanged", { statue: st });
+              } catch (e) {}
+              try {
+                emit("playerMoved", { reason: "statueResetOnClose" });
+              } catch (e) {}
+              try {
+                emit("floorChanged", st.floor);
+              } catch (e) {}
+            }
+          } catch (e) {}
+        };
+
+        // Try to pass callback to triggerFall so restore runs after modal closes
+        try {
+          // set suppress flag to avoid map reset overwriting our immediate restore
+          try {
+            if (typeof window !== "undefined")
+              window.__suppressMapResetOnFall = true;
+          } catch (e) {}
+
+          // ensure we keep autosave suppressed until onClose runs
+          try {
+            deferredRestoreScheduled = true;
+          } catch (e) {}
+          try {
+            // mark statue as pending restore so serialize() avoids saving broken state
+            try {
+              st.__deferredRestore = true;
+            } catch (e) {}
+          } catch (e) {}
+
+          const onCloseReset = () => {
+            try {
+              resetMovedStatue();
+            } catch (e) {}
+            try {
+              if (typeof window !== "undefined")
+                window.__suppressMapResetOnFall = false;
+            } catch (e) {}
+            try {
+              // clear pending restore marker
+              try {
+                st.__deferredRestore = false;
+              } catch (e) {}
+            } catch (e) {}
+            // re-enable saving now and notify systems to persist the restored state
+            try {
+              if (typeof window !== "undefined") window.__skipSaving = false;
+            } catch (e) {}
+            try {
+              if (typeof emit === "function") {
                 try {
-                  // clear the destination tile (the broken statue shouldn't remain)
-                  mapService.setTile(destX, destY, 0, destFloor);
+                  emit("statueChanged", { statue: st });
                 } catch (e) {}
                 try {
-                  // restore statue at its initial position/floor
-                  mapService.setTile(
-                    st.initialX,
-                    st.initialY,
-                    st.nameKey,
-                    st.initialFloor
-                  );
+                  emit("playerMoved", { reason: "statueResetOnClose" });
                 } catch (e) {}
                 try {
-                  st.x = st.initialX;
-                  st.y = st.initialY;
-                  st.floor = st.initialFloor;
-                  if (st.obj) {
-                    st.obj.gridX = st.initialX;
-                    st.obj.gridY = st.initialY;
-                    try {
-                      const origTex = PIXI.Texture.from(
-                        st.originalTexturePath || "img/statue.png"
-                      );
-                      if (origTex) st.obj.sprite.texture = origTex;
-                    } catch (e) {}
-                    try {
-                      st.obj.sprite.visible =
-                        st.floor === mapService.getFloor();
-                      st.obj.updatePixelPosition();
-                    } catch (e) {}
-                  }
-                  st.moved = false;
-                  if (st.obj) st.obj.broken = false;
-                  st.removed = false;
-                  try {
-                    console.log(
-                      "[statue] reset after crushing death (onClose)",
-                      {
-                        nameKey: st.nameKey,
-                        to: { x: st.x, y: st.y, floor: st.floor },
-                      }
-                    );
-                  } catch (e) {}
+                  emit("floorChanged", st.floor);
                 } catch (e) {}
               }
             } catch (e) {}
           };
 
-          if (typeof requestAnimationFrame === "function") {
-            requestAnimationFrame(() => {
+          if (typeof p.triggerFall === "function") {
+            try {
+              p.triggerFall("像の落下で轢かれてしまった...", {
+                onClose: onCloseReset,
+              });
+            } catch (e) {
               try {
-                p.triggerFall("像の落下で轢かれてしまった...", {
-                  onClose: resetMovedStatue,
-                });
-              } catch (err) {
-                console.error("triggerFall failed on player", err);
-              }
-            });
+                p.triggerFall("像の落下で轢かれてしまった...");
+              } catch (ee) {}
+            }
           } else {
-            p.triggerFall("像の落下で轢かれてしまった...", {
-              onClose: resetMovedStatue,
-            });
+            try {
+              showCustomAlert("像の落下で轢かれてしまった...", {
+                onClose: onCloseReset,
+                allowOverlayClose: false,
+              });
+            } catch (e) {
+              try {
+                showCustomAlert("像の落下で轢かれてしまった...");
+              } catch (ee) {}
+            }
           }
-        }
+        } catch (e) {}
       }
-    } catch (e) {
-      console.error("player death check failed", e);
-    }
+    } catch (e) {}
 
     // kill snakes at destination and notify
     try {
@@ -323,15 +618,39 @@ function _applyFallenStatueEffects(st, destX, destY, destFloor) {
         try {
           showCustomAlert("像の落下で蛇が倒された。");
         } catch (e) {}
-    } catch (e) {
-      console.error("killSnakeAt failed", e);
-    }
+    } catch (e) {}
 
     try {
       showCustomAlert("像が穴に落ちて下の階に落下した。");
     } catch (e) {}
+
+    // ensure autosave re-enabled and request save for final state
+    try {
+      if (typeof window !== "undefined") {
+        // Only re-enable autosave here if we did not schedule a deferred restore
+        if (!deferredRestoreScheduled) window.__skipSaving = false;
+      }
+    } catch (e) {}
+    try {
+      if (typeof emit === "function" && !deferredRestoreScheduled) {
+        try {
+          emit("statueChanged", { statue: st });
+        } catch (e) {}
+        try {
+          emit("playerMoved", { reason: "statueFallComplete" });
+        } catch (e) {}
+        try {
+          emit("floorChanged", st.floor);
+        } catch (e) {}
+      }
+    } catch (e) {}
   } catch (e) {
     console.error("_applyFallenStatueEffects failed", e);
+    try {
+      if (typeof window !== "undefined") {
+        if (!deferredRestoreScheduled) window.__skipSaving = false;
+      }
+    } catch (ee) {}
   }
 }
 
@@ -382,10 +701,7 @@ export function handleMoveByDisplayName(displayName, dir) {
         if (opt === "違う" && !hasDiff) {
           return { ok: false, msg: "その像は動かせないようだ" };
         }
-        // keep existing behavior (handleStatueM will operate on both s2 and s6 as before)
       } else {
-        // For generic statues, limit the actual targets moved to those that
-        // match the opt; if none remain, disallow.
         let filtered = targets;
         if (opt === "同じ")
           filtered = targets.filter((t) => t.floor === playerFloor);
@@ -394,11 +710,6 @@ export function handleMoveByDisplayName(displayName, dir) {
         if (!filtered || filtered.length === 0) {
           return { ok: false, msg: "その像は動かせないようだ" };
         }
-        // replace targets array contents for the rest of the function by mutating
-        // the local 'targets' variable reference. (we'll shadow it below by reassigning)
-        // eslint-disable-next-line no-param-reassign
-        // Note: we cannot reassign the const targets, so create a new var for processing
-        // the loop below will use 'effectiveTargets'.
         var effectiveTargets = filtered;
       }
     }
@@ -430,7 +741,6 @@ export function handleMoveByDisplayName(displayName, dir) {
       return { ok: false, msg: "その像は北にしか動かせないようだ" };
 
     if (s2) {
-      // validate there is indeed an instance at expected origin
       if (s2.x !== 7 || s2.y !== 5) {
         return { ok: false, msg: "その像は動かせないようだ" };
       }
@@ -439,11 +749,9 @@ export function handleMoveByDisplayName(displayName, dir) {
         const oldY2 = s2.y;
         const targetX2 = 3;
         const targetY2 = 2;
-        // check whether target is a hole -> falling behavior
         try {
           const t2 = mapService.getTile(targetX2, targetY2, s2.floor);
           if (t2 === TILE.HOLE || t2 === "hole") {
-            // attempt to resolve cushion mapping (similar to generic case)
             const newFloor2 = Math.max(1, s2.floor - 1);
             let destX2 = targetX2;
             let destY2 = targetY2;
@@ -478,21 +786,16 @@ export function handleMoveByDisplayName(displayName, dir) {
                   }
                 }
               }
-              if (!found2) {
-                // this hole is not mapped -> disallow move
+              if (!found2)
                 return { ok: false, msg: "その像は動かせないようだ" };
-              }
               destX2 = typeof found2.x === "number" ? found2.x : destX2;
               destY2 = typeof found2.y === "number" ? found2.y : destY2;
               destFloor2 = typeof found2.f === "number" ? found2.f : destFloor2;
             } catch (e) {}
 
             try {
-              // clear origin tile
               mapService.setTile(oldX2, oldY2, 0, s2.floor);
             } catch (e) {}
-
-            // apply shared fall effects so snake kill and alerts occur
             try {
               _applyFallenStatueEffects(s2, destX2, destY2, destFloor2);
             } catch (e) {
@@ -502,7 +805,6 @@ export function handleMoveByDisplayName(displayName, dir) {
               );
             }
           } else {
-            // normal move onto non-hole target
             try {
               mapService.setTile(s2.x, s2.y, 0, s2.floor);
               mapService.setTile(targetX2, targetY2, "statue_m", 2);
@@ -552,7 +854,6 @@ export function handleMoveByDisplayName(displayName, dir) {
       }
       if (!blocked6) {
         if (fell6) {
-          // determine destination using cushion mapping - only allow falls into mapped holes
           const newFloor6 = Math.max(1, 6 - 1);
           let destX6 = targetX6;
           let destY6 = targetY6;
@@ -587,10 +888,7 @@ export function handleMoveByDisplayName(displayName, dir) {
                 }
               }
             }
-            if (!found6) {
-              // this hole is not one of the known cushion-mapped holes -> disallow fall
-              return { ok: false, msg: "その像は動かせないようだ" };
-            }
+            if (!found6) return { ok: false, msg: "その像は動かせないようだ" };
             destX6 = typeof found6.x === "number" ? found6.x : destX6;
             destY6 = typeof found6.y === "number" ? found6.y : destY6;
             destFloor6 = typeof found6.f === "number" ? found6.f : destFloor6;
@@ -599,8 +897,6 @@ export function handleMoveByDisplayName(displayName, dir) {
           try {
             mapService.setTile(oldX6, oldY6, 0, 6);
           } catch (e) {}
-
-          // use shared effect helper so statue_m behaves identically to other statues
           try {
             _applyFallenStatueEffects(s6, destX6, destY6, destFloor6);
           } catch (e) {
@@ -624,6 +920,10 @@ export function handleMoveByDisplayName(displayName, dir) {
 
   const handleGeneric = (st) => {
     if (st.moved) return { ok: false, msg: "その像はもう動かせないようだ" };
+    try {
+      if (st.nameKey === "statue_j" && dir !== "北")
+        return { ok: false, msg: "その像は北にしか動かせないようだ" };
+    } catch (e) {}
     const vec = getVecForFloor(dir, st.floor);
     if (!vec) return { ok: false, msg: "入力が正しくないようだ" };
     const oldX = st.x;
@@ -698,16 +998,12 @@ export function handleMoveByDisplayName(displayName, dir) {
             }
           }
         }
-        if (!found) {
-          // this hole is not a known cushion-mapped hole: disallow fall
-          return { ok: false, msg: "その像は動かせないようだ" };
-        }
+        if (!found) return { ok: false, msg: "その像は動かせないようだ" };
         destX = typeof found.x === "number" ? found.x : destX;
         destY = typeof found.y === "number" ? found.y : destY;
         destFloor = typeof found.f === "number" ? found.f : destFloor;
       } catch (e) {}
 
-      // shared fall handling
       _applyFallenStatueEffects(st, destX, destY, destFloor);
 
       return { ok: true };
@@ -726,8 +1022,10 @@ export function handleMoveByDisplayName(displayName, dir) {
     } catch (e) {}
     try {
       st.moved = true;
+      st.broken = false;
+      if (st.obj) st.obj.broken = false;
     } catch (e) {}
-    return { ok: true };
+    return true;
   };
 
   let movedOK = true;
@@ -736,7 +1034,6 @@ export function handleMoveByDisplayName(displayName, dir) {
     movedOK = res && res.ok !== false;
     if (res && res.ok === false) return res;
   } else {
-    // use effectiveTargets if defined by チェンジ filtering, otherwise use original targets
     const listToProcess =
       typeof effectiveTargets !== "undefined" ? effectiveTargets : targets;
     for (const st of listToProcess) {
@@ -761,17 +1058,38 @@ export function reset() {
 
 export function serialize() {
   try {
-    return statues.map((s) => ({
-      x: s.x,
-      y: s.y,
-      floor: s.floor,
-      nameKey: s.nameKey,
-      moved: !!s.moved,
-      removed: !!s.removed,
-      initialX: s.initialX,
-      initialY: s.initialY,
-      initialFloor: s.initialFloor,
-    }));
+    return statues.map((s) => {
+      try {
+        if (s && s.__deferredRestore) {
+          // if a deferred restore is pending, prefer initial position and
+          // report as not moved/broken so intermediate broken state is not saved
+          return {
+            x: s.initialX,
+            y: s.initialY,
+            floor: s.initialFloor,
+            nameKey: s.nameKey,
+            moved: false,
+            removed: false,
+            broken: false,
+            initialX: s.initialX,
+            initialY: s.initialY,
+            initialFloor: s.initialFloor,
+          };
+        }
+      } catch (e) {}
+      return {
+        x: s.x,
+        y: s.y,
+        floor: s.floor,
+        nameKey: s.nameKey,
+        moved: !!s.moved,
+        removed: !!s.removed,
+        broken: !!(s.broken || (s.obj && s.obj.broken)),
+        initialX: s.initialX,
+        initialY: s.initialY,
+        initialFloor: s.initialFloor,
+      };
+    });
   } catch (e) {
     console.error("statueManager.serialize failed", e);
     return null;
@@ -795,6 +1113,7 @@ export function deserialize(arr) {
           found.floor =
             typeof item.floor === "number" ? item.floor : found.floor;
           found.moved = !!item.moved;
+          found.broken = !!item.broken;
           found.removed = !!item.removed;
 
           // reconcile map tile and sprite according to removed/moved flags
@@ -834,7 +1153,7 @@ export function deserialize(arr) {
                   found.obj.gridY = found.y;
                   // apply broken texture if statue was moved/broken
                   try {
-                    if (found.moved) {
+                    if (found.broken) {
                       const brokenTex = PIXI.Texture.from(
                         "img/statue_broken.png"
                       );
@@ -852,6 +1171,20 @@ export function deserialize(arr) {
                     if (found.obj.sprite)
                       found.obj.sprite.visible =
                         found.floor === mapService.getFloor();
+
+                    // ensure broken or removed statues are not interactive (avoid A-button after reload)
+                    try {
+                      if (
+                        found.obj.sprite &&
+                        typeof found.obj.sprite.interactive !== "undefined"
+                      ) {
+                        found.obj.sprite.interactive = !!(
+                          !found.broken && !found.removed
+                        );
+                        // if removed, also hide/intercept input
+                        if (found.removed) found.obj.sprite.visible = false;
+                      }
+                    } catch (e) {}
                   } catch (e) {}
 
                   // ensure sprite is attached to entity layer

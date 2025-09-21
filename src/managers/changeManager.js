@@ -495,6 +495,7 @@ export function openChangeModal() {
           const flipped = currentOpt === "同じ" ? "違う" : "同じ";
 
           // persist flip both per-floor and globally (global kept for backward compat)
+          // Persist explicit opt field to represent the new choice ('同じ'/'違う').
           window.__changeState.global.move = { type: "反転", opt: flipped };
           window.__changeStateByFloor[floor]["ムーブ"] = {
             type: "反転",

@@ -11,11 +11,7 @@ import {
   renderMagicList,
   renderInfoList, // added to allow refreshing the info list
 } from "../managers/infoManager.js";
-import {
-  showCustomAlert,
-  openPuzzleModal,
-  closePuzzleModal,
-} from "./modals.js";
+import { openPuzzleModal, showCustomAlert } from "../ui/modals.js";
 import {
   TILE,
   allInfo,
@@ -42,9 +38,27 @@ import * as statueManager from "../managers/statueManager.js";
 import * as puzzleManager from "../managers/puzzleManager.js";
 import * as changeManager from "../managers/changeManager.js";
 import * as magicManager from "../managers/magicManager.js";
+import { initOverlayManager } from "../managers/overlayManager.js";
+import * as stateManager from "../managers/stateManager.js";
 
 export async function setupUI() {
   const app = initEngine();
+  // Do NOT expose playerState globally by default (avoid accidental mutation/side-effects)
+  // If needed for debugging, use the console to inspect imports or explicitly attach in dev
+  /*
+  try {
+    if (typeof window !== "undefined") {
+      window.playerState = playerState;
+      // also expose under globalThis for module consoles that reference globalThis
+      try {
+        globalThis.playerState = playerState;
+      } catch (e) {}
+      console.log("[debug] exposed playerState on window/globalThis");
+    }
+  } catch (e) {}
+  */
+  // overlay manager instance (initialized later after statues are created)
+  let overlayMgr = null;
   // ensure mapService is set to the desired start floor before loading the map image
   try {
     mapService.setFloor(START_FLOOR);
@@ -68,67 +82,7 @@ export async function setupUI() {
     await snakeManager.initSnakes(app._layers);
   } catch (e) {}
 
-  // --- Torches: runtime storage for placed torches
-  window.__torches = window.__torches || {}; // key -> { x,y,floor,sprite,isCorrect }
-  const _torchKey = (x, y, f) => `${x},${y},${f}`;
-
-  function _placeTorchAt(x, y, f, isCorrect) {
-    try {
-      const key = _torchKey(x, y, f);
-      if (window.__torches[key]) return false; // already placed
-      const img = isCorrect ? "img/torch_on.jpg" : "img/torch_off.jpg";
-      const spr = PIXI.Sprite.from(img);
-      try {
-        spr.width = TILE_SIZE;
-        spr.height = TILE_SIZE;
-      } catch (e) {}
-      spr.x = x * TILE_SIZE;
-      spr.y = y * TILE_SIZE;
-      // visible only when viewing the same floor; persist otherwise
-      try {
-        const currentFloor = mapService.getFloor();
-        spr.visible = f === currentFloor;
-      } catch (e) {
-        spr.visible = false;
-      }
-      try {
-        // add torch to mapLayer so player (in entityLayer) renders above it
-        if (app && app._layers && app._layers.mapLayer) {
-          app._layers.mapLayer.addChild(spr);
-        } else if (app && app.stage) {
-          app.stage.addChildAt(spr, 0);
-        }
-      } catch (e) {}
-      window.__torches[key] = {
-        x,
-        y,
-        floor: f,
-        sprite: spr,
-        isCorrect: !!isCorrect,
-      };
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  function _removeTorchAt(x, y, f) {
-    try {
-      const key = _torchKey(x, y, f);
-      const entry = window.__torches[key];
-      if (!entry) return false;
-      try {
-        if (entry.sprite && entry.sprite.parent)
-          entry.sprite.parent.removeChild(entry.sprite);
-      } catch (e) {}
-      delete window.__torches[key];
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  // listen for floor change events to update background image
+  // listen for floor change events to update background image and statue visibility
   on("floorChanged", (floor) => {
     try {
       const img = mapService.getMapImage(floor);
@@ -143,55 +97,13 @@ export async function setupUI() {
           }
         }
       } catch (e) {}
-      // update torches visibility/parent on floor change: show only those matching the new floor
+      // overlay manager will handle torches/overlays visibility
       try {
-        const torches = window.__torches || {};
-        for (const k of Object.keys(torches)) {
-          try {
-            const t = torches[k];
-            if (!t) continue;
-            // recreate sprite if missing
-            if (!t.sprite || !t.sprite.parent) {
-              const imgPath = t.isCorrect
-                ? "img/torch_on.jpg"
-                : "img/torch_off.jpg";
-              const spr = PIXI.Sprite.from(imgPath);
-              try {
-                spr.width = TILE_SIZE;
-                spr.height = TILE_SIZE;
-              } catch (e) {}
-              t.sprite = spr;
-            } else {
-              // refresh texture
-              try {
-                const desiredImg = t.isCorrect
-                  ? "img/torch_on.jpg"
-                  : "img/torch_off.jpg";
-                t.sprite.texture = PIXI.Texture.from(desiredImg);
-              } catch (e) {}
-            }
-            // update pixel position
-            try {
-              t.sprite.x = t.x * TILE_SIZE;
-              t.sprite.y = t.y * TILE_SIZE;
-            } catch (e) {}
-            // ensure sprite is attached to mapLayer
-            try {
-              if (app && app._layers && app._layers.mapLayer) {
-                if (t.sprite.parent !== app._layers.mapLayer) {
-                  try {
-                    if (t.sprite.parent) t.sprite.parent.removeChild(t.sprite);
-                  } catch (e) {}
-                  app._layers.mapLayer.addChild(t.sprite);
-                }
-              }
-            } catch (e) {}
-            // visible only when torch.floor === current viewed floor
-            try {
-              t.sprite.visible = t.floor === floor;
-            } catch (e) {}
-          } catch (e) {}
-        }
+        if (
+          overlayMgr &&
+          typeof overlayMgr.refreshOverlaysForFloor === "function"
+        )
+          overlayMgr.refreshOverlaysForFloor(floor);
       } catch (e) {}
     } catch (e) {}
   });
@@ -222,108 +134,302 @@ export async function setupUI() {
     console.error("statueManager.init failed", e);
   }
 
-  // listen for player moves to step the snake and then evaluate sight
-  on("playerMoved", (payload) => {
-    try {
-      // step snakes (only visible ones by default)
-      const moved = snakeManager.stepSnakes({ onlyVisible: true });
-      // moved is an array of {id,x,y,floor}
+  // initialize overlay/torch manager now that statues and layers exist
+  try {
+    overlayMgr = initOverlayManager({ app, TILE, allInfo });
+  } catch (e) {}
 
-      // after both have moved (player and snake), evaluate line-of-sight
+  // Helper: build a minimal save snapshot for localStorage
+  function _buildSaveSnapshot() {
+    try {
+      const snap = {
+        playerState: Object.assign({}, playerState),
+        // include runtime player and map state so reload restores exact position/floor
+        player:
+          player && typeof player.serialize === "function"
+            ? player.serialize()
+            : null,
+        map:
+          mapService && typeof mapService.serialize === "function"
+            ? mapService.serialize()
+            : null,
+        allInfo: {},
+        allPuzzles: {},
+        torches: [],
+        statues: [],
+      };
       try {
-        if (player.isSnakeInSight()) {
-          // if snake now visible, trigger fall
-          player.triggerFall("ヘビを見て石化してしまった...！");
+        for (const k of Object.keys(allInfo || {})) {
+          snap.allInfo[k] = { unlocked: !!allInfo[k].unlocked };
         }
       } catch (e) {}
-
-      // Prompt to activate チェンジ when standing on the change tile (once per entry)
       try {
-        const tileUnder = mapService.getTile(
-          player.gridX,
-          player.gridY,
-          player.floor
-        );
-        if (tileUnder === TILE.CHANGE || tileUnder === "change") {
-          const posKey = `${player.gridX},${player.gridY},${player.floor}`;
-          window.__lastChangePrompt = window.__lastChangePrompt || null;
-          if (window.__lastChangePrompt !== posKey) {
-            window.__lastChangePrompt = posKey;
-            let confirmModal = document.getElementById(
-              "change-activate-confirm"
-            );
-            if (!confirmModal) {
-              confirmModal = document.createElement("div");
-              confirmModal.id = "change-activate-confirm";
-              confirmModal.className = "modal-wrapper";
-              confirmModal.style.display = "flex";
-              confirmModal.style.position = "fixed";
-              confirmModal.style.left = "0";
-              confirmModal.style.top = "0";
-              confirmModal.style.width = "100%";
-              confirmModal.style.height = "100%";
-              confirmModal.style.alignItems = "center";
-              confirmModal.style.justifyContent = "center";
-              confirmModal.style.zIndex = 26000;
+        for (const [sid, sset] of Object.entries(allPuzzles || {})) {
+          // preserve set.unlocked and per-piece unlocked where present
+          snap.allPuzzles[sid] = { unlocked: !!sset.unlocked };
+          if (Array.isArray(sset.pieces)) {
+            snap.allPuzzles[sid].pieces = (sset.pieces || []).map((p) => ({
+              id: p.id,
+              unlocked: !!p.unlocked,
+            }));
+          }
+        }
+      } catch (e) {}
+      try {
+        const tor = window.__torches || {};
+        for (const k of Object.keys(tor)) {
+          const t = tor[k];
+          if (!t) continue;
+          snap.torches.push({
+            x: t.x,
+            y: t.y,
+            f: t.floor,
+            isCorrect: !!t.isCorrect,
+          });
+        }
+      } catch (e) {}
+      try {
+        const sts = window.__statues || [];
+        for (const s of sts) {
+          if (!s) continue;
+          snap.statues.push({
+            nameKey: s.nameKey,
+            x: s.x,
+            y: s.y,
+            floor: s.floor,
+            moved: !!s.moved,
+            broken: !!s.broken,
+            removed: !!s.removed,
+          });
+        }
+      } catch (e) {}
+      return snap;
+    } catch (e) {
+      return null;
+    }
+  }
 
-              const box = document.createElement("div");
-              box.className = "modal-content";
-              box.style.padding = "12px";
-              box.style.background = "#fff";
-              box.style.borderRadius = "6px";
-              box.style.display = "flex";
-              box.style.flexDirection = "column";
-              box.style.gap = "8px";
-              box.style.minWidth = "240px";
+  // Helper: save current state to localStorage
+  function _persistState() {
+    try {
+      const snap = _buildSaveSnapshot();
+      if (snap && stateManager && typeof stateManager.save === "function") {
+        try {
+          stateManager.save(snap);
+        } catch (e) {}
+      }
+    } catch (e) {}
+  }
 
-              const msg = document.createElement("div");
-              msg.textContent = "チェンジを発動しますか？";
-              box.appendChild(msg);
+  // Debounced scheduler to persist state on common events
+  let _saveTimeout = null;
+  function _schedulePersist(delay = 150) {
+    try {
+      if (typeof window !== "undefined" && window.__skipSaving) return;
+      if (_saveTimeout) clearTimeout(_saveTimeout);
+      _saveTimeout = setTimeout(() => {
+        try {
+          _persistState();
+        } catch (e) {}
+        _saveTimeout = null;
+      }, delay);
+    } catch (e) {}
+  }
 
-              const btnWrap = document.createElement("div");
-              btnWrap.style.display = "flex";
-              btnWrap.style.gap = "8px";
-              btnWrap.style.justifyContent = "center";
+  // Persist on common events so reload restores latest state
+  try {
+    on("playerMoved", () => _schedulePersist());
+    on("puzzleChanged", () => _schedulePersist());
+    on("statueChanged", () => _schedulePersist());
+    on("floorChanged", () => _schedulePersist());
+  } catch (e) {}
 
-              const yes = document.createElement("button");
-              yes.textContent = "はい";
-              yes.className = "ui-button";
-
-              const no = document.createElement("button");
-              no.textContent = "いいえ";
-              no.className = "ui-button";
-
-              btnWrap.appendChild(yes);
-              btnWrap.appendChild(no);
-              box.appendChild(btnWrap);
-              confirmModal.appendChild(box);
-              document.body.appendChild(confirmModal);
-
-              yes.addEventListener("click", () => {
-                try {
-                  if (
-                    changeManager &&
-                    typeof changeManager.openChangeModal === "function"
-                  )
-                    changeManager.openChangeModal();
-                } catch (e) {}
-                confirmModal.style.display = "none";
-              });
-
-              no.addEventListener("click", () => {
-                confirmModal.style.display = "none";
-              });
-            } else {
-              confirmModal.style.display = "flex";
+  // Restore saved state (if any) after overlayMgr init
+  try {
+    if (stateManager && typeof stateManager.load === "function") {
+      const saved = stateManager.load();
+      if (saved) {
+        // 1) restore map state first (so floor/map-dependent restores work)
+        try {
+          if (
+            saved.map &&
+            mapService &&
+            typeof mapService.deserialize === "function"
+          ) {
+            try {
+              mapService.deserialize(saved.map);
+            } catch (e) {
+              console.error("mapService.deserialize failed", e);
             }
           }
-        } else {
-          // clear tracker so re-entering the tile later shows the prompt again
-          window.__lastChangePrompt = null;
+        } catch (e) {
+          console.error("restore: map deserialize failed", e);
         }
-      } catch (e) {}
-    } catch (e) {}
-  });
+
+        // 2) update visible map and notify listeners
+        try {
+          const floor = mapService.getFloor();
+          const img = mapService.getMapImage(floor);
+          mapSprite.texture = PIXI.Texture.from(img);
+          mapSprite.width = app.screen.width;
+          mapSprite.height = app.screen.height;
+          try {
+            emit("floorChanged", floor);
+          } catch (e) {}
+        } catch (e) {
+          console.error("restore: updating map sprite failed", e);
+        }
+
+        // 3) restore global playerState and runtime player (prefer runtime when available)
+        try {
+          if (saved.playerState) {
+            try {
+              Object.assign(playerState, saved.playerState);
+            } catch (e) {
+              console.error("restore: applying playerState failed", e);
+            }
+          }
+          if (
+            saved.player &&
+            player &&
+            typeof player.deserialize === "function"
+          ) {
+            try {
+              player.deserialize(saved.player);
+            } catch (e) {
+              console.error("restore: player.deserialize failed", e);
+            }
+          }
+        } catch (e) {
+          console.error("restore: player restore failed", e);
+        }
+
+        // 4) restore unlocked info entries
+        try {
+          if (saved.allInfo) {
+            for (const k of Object.keys(saved.allInfo || {})) {
+              try {
+                if (allInfo[k])
+                  allInfo[k].unlocked = !!saved.allInfo[k].unlocked;
+              } catch (e) {}
+            }
+          }
+        } catch (e) {
+          console.error("restore: allInfo failed", e);
+        }
+
+        // 5) restore puzzles
+        try {
+          if (saved.allPuzzles) {
+            for (const sid of Object.keys(saved.allPuzzles || {})) {
+              try {
+                const sdata = saved.allPuzzles[sid];
+                if (!sdata) continue;
+                if (allPuzzles[sid]) {
+                  try {
+                    allPuzzles[sid].unlocked = !!sdata.unlocked;
+                  } catch (e) {}
+                  try {
+                    if (
+                      Array.isArray(allPuzzles[sid].pieces) &&
+                      Array.isArray(sdata.pieces)
+                    ) {
+                      for (const p of sdata.pieces) {
+                        try {
+                          const found = (allPuzzles[sid].pieces || []).find(
+                            (pp) => String(pp.id) === String(p.id)
+                          );
+                          if (found) found.unlocked = !!p.unlocked;
+                        } catch (e) {}
+                      }
+                    }
+                  } catch (e) {}
+                }
+              } catch (e) {}
+            }
+          }
+        } catch (e) {
+          console.error("restore: allPuzzles failed", e);
+        }
+
+        // 6) restore torches
+        try {
+          if (saved.torches && Array.isArray(saved.torches)) {
+            for (const t of saved.torches) {
+              try {
+                if (!t) continue;
+                if (
+                  overlayMgr &&
+                  typeof overlayMgr.placeTorchAt === "function"
+                ) {
+                  overlayMgr.placeTorchAt(t.x, t.y, t.f, !!t.isCorrect);
+                } else {
+                  const key = `${t.x},${t.y},${t.f}`;
+                  window.__torches = window.__torches || {};
+                  window.__torches[key] = {
+                    x: t.x,
+                    y: t.y,
+                    floor: t.f,
+                    isCorrect: !!t.isCorrect,
+                    sprite: null,
+                  };
+                }
+              } catch (e) {}
+            }
+          }
+        } catch (e) {
+          console.error("restore: torches failed", e);
+        }
+
+        // 7) restore statue runtime state minimally
+        try {
+          if (saved.statues && Array.isArray(saved.statues)) {
+            const sts = window.__statues || [];
+            for (const s of saved.statues) {
+              try {
+                if (!s) continue;
+                const found = sts.find(
+                  (ss) =>
+                    ss &&
+                    ss.nameKey === s.nameKey &&
+                    ss.initialX === s.x &&
+                    ss.initialY === s.y
+                );
+                if (found) {
+                  found.x = s.x;
+                  found.y = s.y;
+                  found.floor = s.floor;
+                  found.moved = !!s.moved;
+                  found.broken = !!s.broken;
+                  found.removed = !!s.removed;
+                }
+              } catch (e) {}
+            }
+            try {
+              if (
+                statueManager &&
+                typeof statueManager.syncVisibility === "function"
+              )
+                statueManager.syncVisibility(mapService.getFloor());
+            } catch (e) {}
+          }
+        } catch (e) {
+          console.error("restore: statues failed", e);
+        }
+
+        // 8) finally refresh overlays to reflect restored state
+        try {
+          if (
+            overlayMgr &&
+            typeof overlayMgr.refreshOverlaysForFloor === "function"
+          )
+            overlayMgr.refreshOverlaysForFloor(mapService.getFloor());
+        } catch (e) {}
+      }
+    }
+  } catch (e) {
+    console.error("restore: outer failed", e);
+  }
 
   // expose helper for testing teleports across floors
   window.teleportPlayer = (x, y, floor) => {
@@ -376,6 +482,85 @@ export async function setupUI() {
   } catch (e) {
     // ignore DOM errors in non-browser environments
   }
+
+  // initialize magic UI handlers now that the magic input exists
+  try {
+    if (
+      typeof magicManager !== "undefined" &&
+      magicManager &&
+      typeof magicManager.init === "function"
+    ) {
+      try {
+        magicManager.init();
+      } catch (e) {}
+    }
+  } catch (e) {}
+
+  // Wire footer buttons to open the info / puzzle / magic modals and ensure handlers
+  try {
+    // ensure modal list click handlers are attached
+    try {
+      initInfoModalHandlers();
+    } catch (e) {}
+
+    // Info button
+    try {
+      const infoBtn = document.getElementById("info-btn");
+      if (infoBtn) {
+        infoBtn.addEventListener("click", () => {
+          try {
+            const modal = document.getElementById("info-modal");
+            const p1 = document.getElementById("info-page-1");
+            const p2 = document.getElementById("info-page-2");
+            const list = document.getElementById("info-list");
+            try {
+              if (typeof renderInfoList === "function") renderInfoList(list);
+            } catch (e) {}
+            try {
+              if (typeof openInfoModal === "function")
+                openInfoModal(modal, p1, p2, list);
+            } catch (e) {}
+          } catch (e) {}
+        });
+      }
+    } catch (e) {}
+
+    // Puzzle button
+    try {
+      const puzzleBtn = document.getElementById("puzzle-btn");
+      if (puzzleBtn) {
+        puzzleBtn.addEventListener("click", () => {
+          try {
+            const list = document.getElementById("puzzle-set-list");
+            try {
+              if (typeof renderPuzzleSetList === "function")
+                renderPuzzleSetList(list);
+            } catch (e) {}
+            try {
+              if (typeof openPuzzleModal === "function") openPuzzleModal();
+            } catch (e) {}
+          } catch (e) {}
+        });
+      }
+    } catch (e) {}
+
+    // Magic / Item button
+    try {
+      const itemBtn = document.getElementById("item-btn");
+      if (itemBtn) {
+        itemBtn.addEventListener("click", () => {
+          try {
+            const modal = document.getElementById("keyword-modal");
+            const list = document.getElementById("magic-list");
+            try {
+              if (typeof renderMagicList === "function") renderMagicList(list);
+            } catch (e) {}
+            if (modal) modal.style.display = "flex";
+          } catch (e) {}
+        });
+      }
+    } catch (e) {}
+  } catch (e) {}
 
   const moveButtons = [
     { id: "up-btn", dx: 0, dy: -1 },
@@ -454,8 +639,26 @@ export async function setupUI() {
     }
   });
 
+  // Helper to build a unique key for torch positions (used by window.__torches)
+  function _torchKey(x, y, f) {
+    try {
+      if (typeof window !== "undefined")
+        window.__torches = window.__torches || {};
+      return `${x},${y},${f}`;
+    } catch (e) {
+      return String(x) + "," + String(y) + "," + String(f);
+    }
+  }
+
   function handleActionEvent() {
     if (!player) return;
+    // debug: log when action handler is invoked (helps detect keyboard vs UI issues)
+    try {
+      console.log(
+        `[action] handleActionEvent invoked at (${player.gridX},${player.gridY},f=${player.floor}) dir=${player.direction}`
+      );
+    } catch (e) {}
+
     // check tile in front of player first for statues
     const dirMap = { down: [0, 1], up: [0, -1], left: [-1, 0], right: [1, 0] };
     const vec = dirMap[player.direction] || [0, 0];
@@ -540,11 +743,21 @@ export async function setupUI() {
               currentTileType === "info_torch"
             ) {
               try {
-                // ensure numeric storage
-                playerState.torchCount = (playerState.torchCount || 0) + 6;
+                // ensure numeric storage and add explicit logging for debugging
+                const prevCount = Number(
+                  (playerState && playerState.torchCount) || 0
+                );
+                const grant = 6;
+                playerState.torchCount = prevCount + grant;
                 // mark that the player has obtained torches at least once
                 try {
                   playerState.gotTorches = true;
+                } catch (e) {}
+                // debug log: location and torch counts
+                try {
+                  console.log(
+                    `[torch] info_torch picked at (${x},${y},f=${player.floor}) prev=${prevCount} granted=${grant} now=${playerState.torchCount}`
+                  );
                 } catch (e) {}
               } catch (e) {}
 
@@ -601,6 +814,17 @@ export async function setupUI() {
           emit && typeof emit === "function" && emit("puzzleChanged");
         } catch (e) {}
 
+        // Immediately persist state so box pickups are not lost if the app
+        // is closed before the debounced autosave fires.
+        try {
+          if (typeof _persistState === "function") _persistState();
+        } catch (e) {
+          try {
+            // fallback: schedule a quick persist
+            if (typeof _schedulePersist === "function") _schedulePersist(0);
+          } catch (ex) {}
+        }
+
         // special handling: acquiring BOX_3F grants MOVE magic (kept as unlock only)
         try {
           if (key === TILE.BOX_3F || key === "box_3f") {
@@ -632,6 +856,18 @@ export async function setupUI() {
 
     // --- Torches: place / pick up when standing on floor or torch_correct
     try {
+      // debug: log entering torch handling and current playerState for diagnosis
+      try {
+        console.log(
+          `[torch] evaluating at (${x},${y},f=${
+            player.floor
+          }) currentTileType=${String(
+            currentTileType
+          )} playerState.torchCount=${Number(
+            (playerState && playerState.torchCount) || 0
+          )}`
+        );
+      } catch (e) {}
       // precompute torch key and check for an existing placed torch at this position
       const torchKey = _torchKey(x, y, player.floor);
       const existingTorch = (window.__torches || {})[torchKey];
@@ -678,7 +914,9 @@ export async function setupUI() {
       } else {
         // existing handling: if a torch is already placed here, A picks it up
         if (existingTorch) {
-          const removed = _removeTorchAt(x, y, player.floor);
+          const removed = overlayMgr
+            ? overlayMgr.removeTorchAt(x, y, player.floor)
+            : false;
           if (removed) {
             try {
               playerState.torchCount = (playerState.torchCount || 0) + 1;
@@ -758,7 +996,9 @@ export async function setupUI() {
 
         // Tile is valid for placement: attempt to place if the player has torches
         if ((playerState.torchCount || 0) > 0) {
-          const ok = _placeTorchAt(x, y, player.floor, !!isCorrect);
+          const ok = overlayMgr
+            ? overlayMgr.placeTorchAt(x, y, player.floor, !!isCorrect)
+            : false;
           if (ok) {
             try {
               playerState.torchCount = Math.max(
@@ -779,6 +1019,16 @@ export async function setupUI() {
               }
               if (correctCount >= 6) {
                 try {
+                  // disable medusa petrification so warping to 6F is safe
+                  try {
+                    if (playerState) playerState.medusaDefeated = true;
+                    try {
+                      console.log(
+                        "[torch] medusa disabled (medusaDefeated=true)"
+                      );
+                    } catch (e) {}
+                  } catch (e) {}
+
                   // warp player to (5,1,6)
                   player.teleport(5, 1, 6);
                   showCustomAlert(
@@ -901,705 +1151,33 @@ export async function setupUI() {
         handleActionEvent();
       } catch (err) {}
     });
-  }
 
-  const itemBtn = document.getElementById("item-btn");
-  const keywordModal = document.getElementById("keyword-modal");
-  if (itemBtn && keywordModal) {
-    itemBtn.addEventListener("click", () => {
-      const list = document.getElementById("magic-list");
-      // --- チェンジの説明文をフロアごとに反映 ---
-      try {
-        const player = window.__playerInstance;
-        const floor = player ? player.floor : null;
-        // 保存対象: 3F:エレベ/ムーブ, 4F:エレベ/クッショ, 5F:エレベ
-        const floorMap = {
-          3: ["エレベ", "ムーブ"],
-          4: ["エレベ", "クッショ"],
-          5: ["エレベ"],
-        };
-        // 元の説明文を保存
-        window.__originalAllInfo =
-          window.__originalAllInfo || JSON.parse(JSON.stringify(allInfo));
-        // まず全てリセット
-        ["box_1f", "box_3f", "box_cushion"].forEach((key) => {
-          if (window.__originalAllInfo[key] && allInfo[key]) {
-            allInfo[key].content = window.__originalAllInfo[key].content;
-          }
-        });
-        // フロアごとのチェンジ状態を反映
-        if (floor && floorMap[floor]) {
-          // prefer an explicit per-floor store if present, but fall back to older global locations
-          const perFloorState =
-            (window.__changeStateByFloor &&
-              window.__changeStateByFloor[floor]) ||
-            {};
-          const globalState = window.__changeState || {};
-
-          floorMap[floor].forEach((label) => {
-            let key = null;
-            if (label === "エレベ") key = "box_1f";
-            if (label === "ムーブ") key = "box_3f";
-            if (label === "クッショ") key = "box_cushion";
-            if (!key) return;
-
-            // determine config for this label, checking per-floor store first then fallbacks
-            let cfg = null;
-            try {
-              if (label === "エレベ") {
-                // elevator changes are encoded per-floor in window.__changeState.elevatorPerFloor
-                cfg =
-                  (globalState &&
-                    globalState.elevatorPerFloor &&
-                    globalState.elevatorPerFloor[floor]) ||
-                  perFloorState["エレベ"] ||
-                  null;
-              } else if (label === "ムーブ") {
-                // prefer per-floor saved move changes, otherwise fall back to global.move but only for 3F
-                cfg =
-                  perFloorState["ムーブ"] ||
-                  (globalState &&
-                  globalState.global &&
-                  globalState.global.move &&
-                  floor === 3
-                    ? globalState.global.move
-                    : null) ||
-                  null;
-              } else if (label === "クッショ") {
-                // prefer per-floor saved cushion changes, otherwise fall back to global クッショ but only for 4F
-                cfg =
-                  perFloorState["クッショ"] ||
-                  (globalState &&
-                  globalState.global &&
-                  globalState.global["クッショ"] &&
-                  floor === 4
-                    ? globalState.global["クッショ"]
-                    : null) ||
-                  null;
-              }
-            } catch (e) {
-              cfg = null;
-            }
-
-            // チェンジ内容があれば反映
-            if (cfg) {
-              // unified handling: treat cfg.inc (numeric increment) and cfg.dir as source of truth
-              const base =
-                window.__originalAllInfo && window.__originalAllInfo[key]
-                  ? window.__originalAllInfo[key].content
-                  : (allInfo[key] && allInfo[key].content) || "";
-              // derive increment and direction from various possible shapes
-              let inc = 0;
-              let displayNum = null;
-              // prefer explicit inc
-              if (typeof cfg.inc === "number") {
-                inc = cfg.inc;
-              } else if (typeof cfg.amount === "number") {
-                inc = cfg.amount;
-              }
-              // if floors is provided, use it directly as display number
-              if (typeof cfg.floors === "number") {
-                displayNum = Number(cfg.floors);
-              }
-              // determine direction
-              let dir = "上";
-              if (cfg.dir) dir = cfg.dir;
-              else if (cfg.direction) dir = cfg.direction;
-              else if (cfg.type === "反転") dir = "下"; // legacy pure inversion
-
-              // compute final display number if not explicitly provided
-              if (displayNum === null) displayNum = 1 + (Number(inc) || 0);
-
-              // apply to labels
-              if (label === "エレベ") {
-                if (typeof base === "string") {
-                  if (/1つ[上下]/.test(base)) {
-                    allInfo[key].content = base.replace(
-                      /1つ[上下]/g,
-                      `${displayNum}つ${dir}`
-                    );
-                  } else {
-                    allInfo[key].content = base.replace(
-                      /唱えることで[\s\S]*?移動する。/,
-                      `唱えることで${displayNum}つ${dir}の階の同じ場所に移動する。`
-                    );
-                  }
-                }
-              } else if (label === "クッショ") {
-                if (typeof base === "string") {
-                  // for cushion, treat numeric increase as amount to add
-                  const add = Number(cfg.amount || cfg.inc || 0);
-                  allInfo[key].content = base.replace(
-                    /(\d+)歩/,
-                    (m, p1) => `${Number(p1) + add}歩`
-                  );
-                }
-              }
-            }
-          });
-        }
-      } catch (e) {
-        console.error("changeStateByFloor magic modal update failed", e);
-      }
-      // ---
-      try {
-        // call imported renderMagicList directly to avoid scope issues
-        if (typeof renderMagicList === "function") renderMagicList(list);
-      } catch (e) {
-        console.error("renderMagicList failed:", e);
-      }
-      // Ensure magic modal always opens to page 1 (reset any previous page state)
-      try {
-        const magicPage1 = document.getElementById("magic-page-1");
-        const magicPage2 = document.getElementById("magic-page-2");
-        if (magicPage1) magicPage1.style.display = "block";
-        if (magicPage2) magicPage2.style.display = "none";
-      } catch (e) {}
-      keywordModal.style.display = "flex";
-    });
-    // close/back handlers are initialized in initInfoModalHandlers
-  }
-
-  const puzzleBtn = document.getElementById("puzzle-btn");
-  if (puzzleBtn) {
-    puzzleBtn.addEventListener("click", () => {
-      const puzzleModal = document.getElementById("puzzle-modal");
-      if (puzzleModal) puzzleModal.style.display = "flex";
-      const list = document.getElementById("puzzle-set-list");
-      renderPuzzleSetList(list);
-    });
-  }
-
-  // wire puzzle modal close/back buttons like original
-  const puzzleBackBtn = document.getElementById("puzzle-back-btn");
-  const puzzleCloseBtn = document.getElementById("puzzle-close-btn");
-  if (puzzleBackBtn) {
-    puzzleBackBtn.addEventListener("click", () => {
-      const puzzlePage2 = document.getElementById("puzzle-page-2");
-      const puzzlePage1 = document.getElementById("puzzle-page-1");
-      if (puzzlePage2) puzzlePage2.style.display = "none";
-      if (puzzlePage1) puzzlePage1.style.display = "block";
-    });
-  }
-  if (puzzleCloseBtn)
-    puzzleCloseBtn.addEventListener("click", () => {
-      const puzzleModal = document.getElementById("puzzle-modal");
-      if (puzzleModal) puzzleModal.style.display = "none";
-    });
-
-  // ensure puzzle modal overlay click closes like original
-  const puzzleModalEl = document.getElementById("puzzle-modal");
-  if (puzzleModalEl) {
-    puzzleModalEl.addEventListener("click", (e) => {
-      if (e.target === puzzleModalEl) puzzleModalEl.style.display = "none";
-    });
-  }
-
-  const infoBtn = document.getElementById("info-btn");
-  if (infoBtn)
-    infoBtn.addEventListener("click", () => {
-      openInfoModal(
-        document.getElementById("info-modal"),
-        document.getElementById("info-page-1"),
-        document.getElementById("info-page-2"),
-        document.getElementById("info-list")
-      );
-    });
-
-  // 魔法入力欄のロジック
-  // initialize magic handlers via manager
-  try {
-    magicManager.init();
-  } catch (e) {
-    console.error("magicManager.init failed", e);
-  }
-
-  const infoClose = document.getElementById("info-close-btn");
-  if (infoClose)
-    infoClose.addEventListener("click", () =>
-      closeInfoModal(document.getElementById("info-modal"))
-    );
-  const infoBack = document.getElementById("info-back-btn");
-  if (infoBack)
-    infoBack.addEventListener("click", () => {
-      document.getElementById("info-page-1").style.display = "block";
-      document.getElementById("info-page-2").style.display = "none";
-    });
-
-  const infoList = document.getElementById("info-list");
-  if (infoList)
-    infoList.addEventListener("click", (event) => {
-      if (event.target.tagName === "LI") {
-        const key = event.target.dataset.key;
-        showInfoDetail(
-          key,
-          document.getElementById("info-detail-title"),
-          document.getElementById("info-detail-content")
-        );
-      }
-    });
-
-  // initialize info modal handlers (list click etc.)
-  initInfoModalHandlers();
-
-  // after player created and managers initialized, attempt to load saved state
-  try {
-    // lazy import to avoid circular issues
-    const stateManager = await import("../managers/stateManager.js");
-    const saved =
-      stateManager && typeof stateManager.load === "function"
-        ? stateManager.load()
-        : null;
-    if (saved) {
-      try {
-        // restore runtime map first so tiles/statues/snakes align
+    // Bind keyboard 'A' key to trigger actionA for desktop users
+    try {
+      window.addEventListener("keydown", (e) => {
         try {
-          if (saved.map && typeof mapService.deserialize === "function") {
-            mapService.deserialize(saved.map);
-          }
-        } catch (e) {}
-
-        // restore statues before snakes so statue objects exist in expected locations
-        try {
+          const active = document.activeElement;
           if (
-            saved.statues &&
-            typeof statueManager.deserialize === "function"
+            active &&
+            (active.tagName === "INPUT" ||
+              active.tagName === "TEXTAREA" ||
+              active.isContentEditable)
           ) {
-            statueManager.deserialize(saved.statues);
+            return; // don't trigger while typing
           }
-        } catch (e) {}
-
-        // restore snakes
-        try {
-          if (saved.snakes && typeof snakeManager.deserialize === "function") {
-            snakeManager.deserialize(saved.snakes);
+          if (e.key === "a" || e.key === "A") {
+            const now = Date.now();
+            if (now - _lastActionAAt < ACTION_A_DEBOUNCE_MS) return;
+            _lastActionAAt = now;
+            e.preventDefault();
+            handleActionEvent();
           }
-        } catch (e) {}
-
-        // ensure visuals sync to the (possibly restored) current floor
-        try {
-          emit("floorChanged", mapService.getFloor());
-        } catch (e) {}
-
-        // restore player state (position, floor, direction)
-        if (saved.player && typeof window.__playerInstance === "object") {
-          try {
-            window.__playerInstance.deserialize(saved.player);
-          } catch (e) {}
-        }
-
-        // restore playerState (torchCount, medusaDefeated, etc.)
-        try {
-          if (saved.playerState && typeof saved.playerState === "object") {
-            Object.assign(playerState, saved.playerState);
-          }
-        } catch (e) {}
-
-        // restore allInfo unlocked flags
-        try {
-          if (saved.allInfo && typeof saved.allInfo === "object") {
-            for (const k of Object.keys(saved.allInfo)) {
-              if (allInfo[k] && typeof saved.allInfo[k].unlocked === "boolean")
-                allInfo[k].unlocked = saved.allInfo[k].unlocked;
-            }
-          }
-        } catch (e) {}
-
-        // restore torches (clear existing then recreate)
-        try {
-          if (Array.isArray(saved.torches)) {
-            // remove any existing runtime torches
-            try {
-              window.__torches = {};
-            } catch (e) {}
-            for (const t of saved.torches) {
-              try {
-                if (t && typeof t.x === "number") {
-                  _placeTorchAt(t.x, t.y, t.floor, !!t.isCorrect);
-                }
-              } catch (e) {}
-            }
-          }
-        } catch (e) {}
-
-        // after restoring torches (inside the saved load block), also restore puzzles, change and magic state
-        try {
-          // restore puzzles (unlocked pieces and solved answers)
-          if (
-            saved.puzzles &&
-            typeof puzzleManager.deserialize === "function"
-          ) {
-            try {
-              puzzleManager.deserialize(saved.puzzles);
-            } catch (e) {}
-          }
-        } catch (e) {}
-
-        try {
-          // restore changeManager runtime state (elevatorPerFloor, global, per-floor overrides)
-          if (saved.change && typeof changeManager.deserialize === "function") {
-            try {
-              changeManager.deserialize(saved.change);
-            } catch (e) {}
-          }
-        } catch (e) {}
-
-        try {
-          // restore magic-related runtime state (cushion state/map)
-          if (saved.magic && typeof magicManager.deserialize === "function") {
-            try {
-              magicManager.deserialize(saved.magic);
-            } catch (e) {}
-          }
-        } catch (e) {}
-      } catch (e) {
-        console.error("failed to apply saved state", e);
-      }
-    }
-
-    // autosave helper
-    const doSave = () => {
-      try {
-        // allow external code to suppress saving (e.g. RESET flow)
-        try {
-          if (typeof window !== "undefined" && window.__skipSaving) return;
-        } catch (e) {}
-        const out = {};
-        // player
-        try {
-          out.player = window.__playerInstance
-            ? window.__playerInstance.serialize()
-            : null;
-        } catch (e) {
-          out.player = null;
-        }
-        // playerState
-        try {
-          out.playerState = Object.assign({}, playerState);
-        } catch (e) {
-          out.playerState = null;
-        }
-        // allInfo
-        try {
-          out.allInfo = {};
-          for (const k of Object.keys(allInfo)) {
-            out.allInfo[k] = {
-              unlocked: !!(allInfo[k] && allInfo[k].unlocked),
-            };
-          }
-        } catch (e) {
-          out.allInfo = null;
-        }
-        // torches
-        try {
-          out.torches = [];
-          const torches = window.__torches || {};
-          for (const k of Object.keys(torches)) {
-            const t = torches[k];
-            if (!t) continue;
-            out.torches.push({
-              x: t.x,
-              y: t.y,
-              floor: t.floor,
-              isCorrect: !!t.isCorrect,
-            });
-          }
-        } catch (e) {
-          out.torches = null;
-        }
-
-        // map runtime state
-        try {
-          out.map =
-            typeof mapService.serialize === "function"
-              ? mapService.serialize()
-              : null;
-        } catch (e) {
-          out.map = null;
-        }
-        // snakes runtime state
-        try {
-          out.snakes =
-            typeof snakeManager.serialize === "function"
-              ? snakeManager.serialize()
-              : null;
-        } catch (e) {
-          out.snakes = null;
-        }
-        // statues runtime state
-        try {
-          out.statues =
-            typeof statueManager.serialize === "function"
-              ? statueManager.serialize()
-              : null;
-        } catch (e) {
-          out.statues = null;
-        }
-
-        // puzzles runtime state
-        try {
-          out.puzzles =
-            typeof puzzleManager.serialize === "function"
-              ? puzzleManager.serialize()
-              : null;
-        } catch (e) {
-          out.puzzles = null;
-        }
-
-        // change runtime state
-        try {
-          out.change =
-            typeof changeManager.serialize === "function"
-              ? changeManager.serialize()
-              : null;
-        } catch (e) {
-          out.change = null;
-        }
-
-        // magic runtime state (cushion)
-        try {
-          out.magic =
-            typeof magicManager.serialize === "function"
-              ? magicManager.serialize()
-              : null;
-        } catch (e) {
-          out.magic = null;
-        }
-
-        try {
-          stateManager.save(out);
-        } catch (e) {}
-      } catch (e) {}
-    };
-
-    // autosave on important events
-    try {
-      on("playerMoved", () => {
-        try {
-          doSave();
-        } catch (e) {}
-      });
-      on("floorChanged", () => {
-        try {
-          doSave();
-        } catch (e) {}
-      });
-      // save when puzzles change (unlock or solved) so the new puzzle state is persisted immediately
-      try {
-        on("puzzleChanged", () => {
-          try {
-            doSave();
-          } catch (e) {}
-        });
-      } catch (e) {}
-    } catch (e) {}
-
-    // save beforeunload
-    try {
-      window.addEventListener("beforeunload", () => {
-        try {
-          doSave();
-        } catch (e) {}
+        } catch (err) {}
       });
     } catch (e) {}
-  } catch (e) {}
-
-  // overlays for boxes and puzzles
-  try {
-    window.__overlays = window.__overlays || {}; // key -> sprite
-    const _overlayKey = (x, y, f) => `${x},${y},${f}`;
-
-    function _removeOverlayKey(k) {
-      try {
-        const entry = window.__overlays[k];
-        if (!entry) return;
-        if (entry.sprite && entry.sprite.parent)
-          entry.sprite.parent.removeChild(entry.sprite);
-      } catch (e) {}
-      try {
-        delete window.__overlays[k];
-      } catch (e) {}
-    }
-
-    function _refreshOverlayAt(x, y, f, currentFloorView) {
-      try {
-        const tile = mapService.getTile(x, y, f);
-        const key = _overlayKey(x, y, f);
-        // box keys
-        const boxKeys = [
-          TILE.BOX_1F,
-          TILE.BOX_3F,
-          TILE.BOX_CUSHION,
-          TILE.BOX_CHANGE,
-        ];
-        // puzzle keys
-        const puzzleKeys = [
-          TILE.PUZZLE_1H,
-          TILE.PUZZLE_1S,
-          TILE.PUZZLE_1C,
-          TILE.PUZZLE_1D,
-          TILE.PUZZLE_2H,
-          TILE.PUZZLE_2S,
-          TILE.PUZZLE_2C,
-          TILE.PUZZLE_2D,
-          TILE.PUZZLE_3,
-          TILE.PUZZLE_4H,
-          TILE.PUZZLE_4D,
-          TILE.PUZZLE_4S,
-          TILE.PUZZLE_4C,
-          TILE.PUZZLE_5,
-          TILE.PUZZLE_B1,
-        ];
-
-        // remove any existing overlay if tile no longer of interest
-        if (!tile || !(boxKeys.includes(tile) || puzzleKeys.includes(tile))) {
-          _removeOverlayKey(key);
-          return;
-        }
-
-        let imgPath = null;
-        // boxes: show closed or opened depending on allInfo unlocked
-        if (boxKeys.includes(tile)) {
-          const infoKey = typeof tile === "string" ? tile : null;
-          const info = infoKey && allInfo[infoKey] ? allInfo[infoKey] : null;
-          const opened = info && info.unlocked;
-          imgPath = opened ? "img/box_opened.png" : "img/box.png";
-        }
-
-        // puzzles: show suit-specific for single-piece tiles, puzzle.png for set tiles
-        if (puzzleKeys.includes(tile)) {
-          // single piece tiles
-          const singleMap = {
-            [TILE.PUZZLE_1H]: "heart",
-            [TILE.PUZZLE_1S]: "spade",
-            [TILE.PUZZLE_1C]: "clover",
-            [TILE.PUZZLE_1D]: "diamond",
-            [TILE.PUZZLE_2H]: "heart",
-            [TILE.PUZZLE_2S]: "spade",
-            [TILE.PUZZLE_2C]: "clover",
-            [TILE.PUZZLE_2D]: "diamond",
-            [TILE.PUZZLE_4H]: "heart",
-            [TILE.PUZZLE_4D]: "diamond",
-            [TILE.PUZZLE_4S]: "spade",
-            [TILE.PUZZLE_4C]: "clover",
-          };
-          if (singleMap[tile]) {
-            imgPath = `img/${singleMap[tile]}.png`;
-          } else {
-            // set-based puzzle (3,5,b1)
-            imgPath = "img/puzzle.png";
-          }
-        }
-
-        if (!imgPath) {
-          _removeOverlayKey(key);
-          return;
-        }
-
-        // create or update sprite
-        let entry = window.__overlays[key];
-        if (!entry || !entry.sprite) {
-          const spr = PIXI.Sprite.from(imgPath);
-          try {
-            spr.width = TILE_SIZE;
-            spr.height = TILE_SIZE;
-          } catch (e) {}
-          spr.x = x * TILE_SIZE;
-          spr.y = y * TILE_SIZE;
-          try {
-            spr.visible =
-              f ===
-              (typeof currentFloorView === "number"
-                ? currentFloorView
-                : mapService.getFloor());
-          } catch (e) {
-            spr.visible = true;
-          }
-          try {
-            if (app && app._layers && app._layers.mapLayer)
-              app._layers.mapLayer.addChild(spr);
-            else if (app && app.stage) app.stage.addChildAt(spr, 0);
-          } catch (e) {}
-          window.__overlays[key] = {
-            x,
-            y,
-            floor: f,
-            sprite: spr,
-            img: imgPath,
-          };
-        } else {
-          // update texture if changed
-          try {
-            if (entry.img !== imgPath)
-              entry.sprite.texture = PIXI.Texture.from(imgPath);
-            entry.img = imgPath;
-            entry.sprite.x = x * TILE_SIZE;
-            entry.sprite.y = y * TILE_SIZE;
-            entry.sprite.visible =
-              f ===
-              (typeof currentFloorView === "number"
-                ? currentFloorView
-                : mapService.getFloor());
-          } catch (e) {}
-        }
-      } catch (e) {}
-    }
-
-    function refreshOverlaysForFloor(f) {
-      try {
-        const w = mapService.getWidth();
-        const h = mapService.getHeight();
-        for (let yy = 0; yy < h; yy++) {
-          for (let xx = 0; xx < w; xx++) {
-            try {
-              _refreshOverlayAt(xx, yy, f, f);
-            } catch (e) {}
-          }
-        }
-      } catch (e) {}
-    }
-
-    // initial overlay refresh for starting floor
-    try {
-      refreshOverlaysForFloor(mapService.getFloor());
-    } catch (e) {}
-
-    // refresh overlays on relevant events
-    try {
-      on("floorChanged", (newFloor) => {
-        try {
-          // update visibility for all overlays and refresh for the newly shown floor
-          const overlays = window.__overlays || {};
-          for (const k of Object.keys(overlays)) {
-            try {
-              const e = overlays[k];
-              if (e && e.sprite) e.sprite.visible = e.floor === newFloor;
-            } catch (e) {}
-          }
-          refreshOverlaysForFloor(newFloor);
-        } catch (e) {}
-      });
-    } catch (e) {}
-
-    try {
-      on("puzzleChanged", () => {
-        try {
-          refreshOverlaysForFloor(mapService.getFloor());
-        } catch (e) {}
-      });
-    } catch (e) {}
-
-    try {
-      on("playerMoved", () => {
-        try {
-          // ensure overlays reflect any immediate tile removals (e.g. pickups)
-          refreshOverlaysForFloor(mapService.getFloor());
-        } catch (e) {}
-      });
-    } catch (e) {}
-  } catch (e) {}
-
-  // ...existing code...
+  } else {
+    // ...existing code...
+  }
 }
 
 export function startTimer() {
@@ -2005,21 +1583,165 @@ function openMoveModal() {
                   "[statue] player hit by falling statue -> triggerFall"
                 );
                 try {
-                  // Ensure the broken sprite and position are rendered before showing the death alert
+                  // Suppress autosave and mark statue as pending restore so
+                  // serialize() avoids saving the intermediate broken state.
+                  try {
+                    if (typeof window !== "undefined")
+                      window.__skipSaving = true;
+                  } catch (e) {}
+                  try {
+                    st.__deferredRestore = true;
+                  } catch (e) {}
+                  try {
+                    // prevent the default full-floor reset on fall so our manual
+                    // restore of the statue tile is not clobbered
+                    if (typeof window !== "undefined")
+                      window.__suppressMapResetOnFall = true;
+                  } catch (e) {}
+
+                  const onCloseHandler = () => {
+                    try {
+                      // Only restore if this statue was marked for deferred restore
+                      // (set when the player was actually hit by the falling statue).
+                      if (!st || !st.__deferredRestore) {
+                        try {
+                          // ensure we clear any temporary suppression just in case
+                          if (typeof window !== "undefined") {
+                            try {
+                              window.__skipSaving = false;
+                            } catch (e) {}
+                            try {
+                              window.__suppressMapResetOnFall = false;
+                            } catch (e) {}
+                          }
+                        } catch (e) {}
+                        return;
+                      }
+
+                      try {
+                        // clear the broken tile and restore statue tile at its initial position
+                        try {
+                          mapService.setTile(destX, destY, 0, destFloor);
+                        } catch (e) {}
+                        try {
+                          mapService.setTile(
+                            st.initialX,
+                            st.initialY,
+                            st.nameKey,
+                            st.initialFloor
+                          );
+                        } catch (e) {}
+
+                        // update model to initial position
+                        try {
+                          st.x = st.initialX;
+                          st.y = st.initialY;
+                          st.floor = st.initialFloor;
+                          st.broken = false;
+                          if (st.obj) st.obj.broken = false;
+                        } catch (e) {}
+
+                        // restore sprite texture/position if present
+                        try {
+                          if (st.obj) {
+                            try {
+                              const origTex =
+                                PIXI && PIXI.Texture
+                                  ? PIXI.Texture.from(
+                                      st.originalTexturePath || "img/statue.png"
+                                    )
+                                  : null;
+                              if (origTex) st.obj.sprite.texture = origTex;
+                            } catch (e) {}
+                            try {
+                              st.obj.gridX = st.initialX;
+                              st.obj.gridY = st.initialY;
+                              if (
+                                typeof st.obj.updatePixelPosition === "function"
+                              )
+                                st.obj.updatePixelPosition();
+                            } catch (e) {}
+                            try {
+                              if (
+                                st.obj.sprite &&
+                                typeof st.obj.sprite.interactive !== "undefined"
+                              )
+                                st.obj.sprite.interactive = true;
+                            } catch (e) {}
+                          }
+                        } catch (e) {}
+
+                        // ensure map tile is correct (statue, not broken)
+                        try {
+                          mapService.setTile(st.x, st.y, st.nameKey, st.floor);
+                        } catch (e) {}
+
+                        // notify systems so autosave can persist the final restored state
+                        try {
+                          if (typeof emit === "function")
+                            emit("statueChanged", { statue: st });
+                        } catch (e) {}
+                        try {
+                          if (typeof emit === "function")
+                            emit("playerMoved", {
+                              reason: "statueRestoreOnClose",
+                            });
+                        } catch (e) {}
+                        try {
+                          if (typeof emit === "function")
+                            emit("floorChanged", mapService.getFloor());
+                        } catch (e) {}
+
+                        // clear deferred restore marker and re-enable autosave/map reset
+                        try {
+                          st.__deferredRestore = false;
+                        } catch (e) {}
+                        try {
+                          if (typeof window !== "undefined") {
+                            try {
+                              window.__skipSaving = false;
+                            } catch (e) {}
+                            try {
+                              window.__suppressMapResetOnFall = false;
+                            } catch (e) {}
+                          }
+                        } catch (e) {}
+                      } catch (e) {}
+                    } catch (e) {}
+                  };
+
+                  // Use requestAnimationFrame to allow renderer to show broken state first
                   if (typeof requestAnimationFrame === "function") {
                     requestAnimationFrame(() => {
                       try {
-                        p.triggerFall("像の落下で轢かれてしまった...");
+                        if (typeof p.triggerFall === "function")
+                          p.triggerFall("像の落下で轢かれてしまった...", {
+                            onClose: onCloseHandler,
+                          });
                       } catch (err) {
-                        console.error("triggerFall failed on player", err);
+                        try {
+                          if (typeof p.triggerFall === "function")
+                            p.triggerFall("像の落下で轢かれてしまった...");
+                        } catch (e2) {}
                       }
                     });
                   } else {
-                    p.triggerFall("像の落下で轢かれてしまった...");
+                    try {
+                      if (typeof p.triggerFall === "function")
+                        p.triggerFall("像の落下で轢かれてしまった...", {
+                          onClose: onCloseHandler,
+                        });
+                    } catch (err) {
+                      try {
+                        if (typeof p.triggerFall === "function")
+                          p.triggerFall("像の落下で轢かれてしまった...");
+                      } catch (e2) {}
+                    }
                   }
                 } catch (e) {
                   try {
-                    p.triggerFall("像の落下で轢かれてしまった...");
+                    if (typeof p.triggerFall === "function")
+                      p.triggerFall("像の落下で轢かれてしまった...");
                   } catch (e2) {}
                 }
               }
@@ -2093,3 +1815,10 @@ function openMoveModal() {
     modal.style.display = "flex";
   }
 }
+
+// expose to global so other modules that call openMoveModal() without importing work
+try {
+  if (typeof window !== "undefined" && !window.openMoveModal) {
+    window.openMoveModal = openMoveModal;
+  }
+} catch (e) {}

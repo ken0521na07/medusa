@@ -84,7 +84,23 @@ export function showCustomAlert(
 export function openPuzzleModal(setId) {
   const puzzleModal = document.getElementById("puzzle-modal");
   if (!puzzleModal) return;
+  // Ensure page1 (list) is shown first to avoid stale grid UI
+  try {
+    const page1 = document.getElementById("puzzle-page-1");
+    const page2 = document.getElementById("puzzle-page-2");
+    if (page1) page1.style.display = "block";
+    if (page2) page2.style.display = "none";
+  } catch (e) {}
+
   puzzleModal.style.display = "flex";
+  try {
+    // notify listeners that the puzzle modal was just opened so they can refresh UI
+    if (typeof document !== "undefined" && typeof CustomEvent === "function") {
+      document.dispatchEvent(
+        new CustomEvent("puzzleModalOpened", { detail: { setId } })
+      );
+    }
+  } catch (e) {}
 }
 export function closePuzzleModal() {
   const puzzleModal = document.getElementById("puzzle-modal");

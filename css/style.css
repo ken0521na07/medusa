@@ -354,7 +354,6 @@ html {
   cursor: not-allowed;
 }
 
-/* ピースのスタイルは既に定義済み */
 /* ロック時はクリック不可に見せる（pointer-events 保険） */
 .puzzle-piece.locked {
   pointer-events: none;
@@ -375,7 +374,9 @@ html {
   display: none;
   justify-content: center;
   align-items: center;
-  z-index: 9999;
+  /* Raise above generic modal-wrapper (which uses z-index:10000) so the
+     回答入力 modal appears in front of the 謎 modal. */
+  z-index: 11000;
   padding: 20px;
 }
 

@@ -1,7 +1,12 @@
 import { allPuzzles } from "../core/constants.js";
 import { setTile } from "./mapService.js";
-import { openPuzzleModal, showCustomAlert } from "../ui/modals.js";
+import {
+  openPuzzleModal,
+  closePuzzleModal,
+  showCustomAlert,
+} from "../ui/modals.js";
 import { emit } from "../core/eventBus.js";
+import * as mapService from "./mapService.js";
 
 // popup DOM refs
 const popupOverlay = document.getElementById("puzzle-popup-overlay");
@@ -47,6 +52,26 @@ if (popupOverlay)
     if (e.target === popupOverlay) closePuzzlePopup();
   });
 
+// Ensure puzzle modal has overlay click and close/back handlers so it can be dismissed
+try {
+  const modal = document.getElementById("puzzle-modal");
+  if (modal) {
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) closePuzzleModal();
+    });
+    const closeBtn = document.getElementById("puzzle-close-btn");
+    if (closeBtn) closeBtn.addEventListener("click", () => closePuzzleModal());
+    const backBtn = document.getElementById("puzzle-back-btn");
+    if (backBtn)
+      backBtn.addEventListener("click", () => {
+        const p1 = document.getElementById("puzzle-page-1");
+        const p2 = document.getElementById("puzzle-page-2");
+        if (p2) p2.style.display = "none";
+        if (p1) p1.style.display = "block";
+      });
+  }
+} catch (e) {}
+
 if (popupSubmit) {
   popupSubmit.addEventListener("click", () => {
     if (!_currentPiece || !_currentSet) return;
@@ -74,16 +99,54 @@ if (popupSubmit) {
         emit("puzzleChanged");
       } catch (e) {}
 
-      // also refresh puzzle list/modal UI if open
+      // always refresh puzzle modal UI after puzzle state changes so it never
+      // becomes stale (especially when picking up multiple pieces on same floor)
+      try {
+        if (typeof refreshOpenModal === "function") {
+          // slight delay ensures any DOM changes settle before re-render
+          setTimeout(() => {
+            try {
+              refreshOpenModal();
+            } catch (e) {}
+          }, 50);
+        }
+      } catch (e) {}
+
+      // ensure any open puzzle modal refreshes its current view immediately
+      try {
+        const modal = document.getElementById("puzzle-modal");
+        if (modal && modal.style.display === "flex") {
+          try {
+            // Close the modal when a puzzle is correctly solved / picked up.
+            if (typeof closePuzzleModal === "function") closePuzzleModal();
+          } catch (e) {}
+          try {
+            // Ensure state is reset so next open shows page1 and fresh list
+            _openSetId = null;
+            const listEl = document.getElementById("puzzle-set-list");
+            if (listEl && typeof renderPuzzleSetList === "function")
+              renderPuzzleSetList(listEl);
+          } catch (e) {}
+        } else {
+          try {
+            if (typeof refreshOpenModal === "function") refreshOpenModal();
+          } catch (e) {}
+        }
+      } catch (e) {}
+
+      // also refresh puzzle list/modal UI unconditionally to avoid stale UI
       try {
         const listEl = document.getElementById("puzzle-set-list");
         if (listEl && typeof renderPuzzleSetList === "function")
           renderPuzzleSetList(listEl);
-        const modal = document.getElementById("puzzle-modal");
-        if (modal && modal.style.display === "flex" && _openSetId) {
+        const modal3 = document.getElementById("puzzle-modal");
+        if (modal3 && modal3.style.display === "flex") {
           const grid = document.getElementById("puzzle-grid");
-          if (grid && typeof renderPuzzleGrid === "function")
-            renderPuzzleGrid(allPuzzles[_openSetId], grid);
+          if (grid && typeof renderPuzzleGrid === "function") {
+            if (_openSetId && allPuzzles[_openSetId])
+              renderPuzzleGrid(allPuzzles[_openSetId], grid);
+            else renderPuzzleGrid(_currentSet, grid);
+          }
         }
       } catch (e) {}
     } else {
@@ -103,8 +166,6 @@ if (popupInput) {
     _isComposing = true;
   });
   popupInput.addEventListener("compositionend", () => {
-    // compositionend が発火した直後に Enter キーのイベントが来る場合があるため
-    // その直後の Enter を無視するフラグを短時間立てる
     _isComposing = false;
     _ignoreNextEnter = true;
     setTimeout(() => {
@@ -114,7 +175,6 @@ if (popupInput) {
 
   popupInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
-      // IME の確定中または直後は送信しない
       if (_isComposing || _ignoreNextEnter) return;
       e.preventDefault();
       if (popupSubmit && !popupSubmit.disabled) {
@@ -140,22 +200,42 @@ export function handleGetPuzzlePiece(setId, pieceId, playerPos, options = {}) {
     if (!puzzleSet.unlocked) puzzleSet.unlocked = true;
     // remove from map
     if (playerPos && typeof playerPos.x === "number")
-      // prefer explicit floor when provided
       setTile(
         playerPos.x,
         playerPos.y,
         0,
         typeof playerPos.floor === "number" ? playerPos.floor : undefined
       );
+
+    // ensure overlay is updated immediately for this tile (remove puzzle overlay)
+    try {
+      const floor =
+        typeof playerPos?.floor === "number"
+          ? playerPos.floor
+          : mapService.getFloor();
+      if (
+        window &&
+        window.__overlayManager &&
+        typeof window.__overlayManager._refreshOverlayAt === "function"
+      ) {
+        try {
+          window.__overlayManager._refreshOverlayAt(
+            playerPos.x,
+            playerPos.y,
+            floor,
+            mapService.getFloor()
+          );
+        } catch (e) {}
+      }
+    } catch (e) {}
+
     // show native/custom alert indicating piece obtained unless suppressed
     try {
       if (!options.suppressAlert) {
-        // prefer a suit-aware message for 1F/2F pieces; for 3F use simplified message
         const pid = String(puzzlePiece.id || "");
         const sid = String(setId || "").toLowerCase();
         let message = "謎を入手した";
 
-        // If this is not a 3F set, try to infer suit and show the detailed message
         if (!sid.includes("3f")) {
           let suitName = null;
           if (/heart|ハート/i.test(pid)) suitName = "ハート";
@@ -163,7 +243,6 @@ export function handleGetPuzzlePiece(setId, pieceId, playerPos, options = {}) {
           else if (/spade|スペード/i.test(pid)) suitName = "スペード";
           else if (/clover|clover|clo/i.test(pid)) suitName = "クラブ";
           else {
-            // fallback to short id style like puzzle_1h / puzzle_2d etc.
             if (/_?\w*h$|1h|2h/i.test(pid)) suitName = "ハート";
             else if (/_?\w*d$|1d|2d/i.test(pid)) suitName = "ダイヤ";
             else if (/_?\w*c$|1c|2c/i.test(pid)) suitName = "クラブ";
@@ -177,39 +256,78 @@ export function handleGetPuzzlePiece(setId, pieceId, playerPos, options = {}) {
               "謎を入手した。画面の【謎】ボタンから入手した謎を確認できます";
           }
         } else {
-          // 3F: simplified message per request
           message = "謎を入手した";
         }
 
+        try {
+          console.log(
+            `[puzzle] picked up piece: set=${setId} piece=${puzzlePiece.id} at=${playerPos?.x},${playerPos?.y},f=${playerPos?.floor}`
+          );
+        } catch (e) {}
+
         if (typeof showCustomAlert === "function") {
-          // showCustomAlert so user must close it manually
           showCustomAlert(message, { allowOverlayClose: true });
         } else {
           window.alert(message);
         }
       }
     } catch (e) {}
-    // update UI: when opening puzzle modal, render grid will show only unlocked pieces as their images
 
-    // notify app that puzzle state changed so it can autosave
     try {
       emit("puzzleChanged");
     } catch (e) {}
 
-    // refresh puzzle list/modal UI immediately if the puzzle modal is open
+    // always refresh puzzle modal UI after puzzle state changes so it never
+    // becomes stale (especially when picking up multiple pieces on same floor)
+    try {
+      if (typeof refreshOpenModal === "function") {
+        // slight delay ensures any DOM changes settle before re-render
+        setTimeout(() => {
+          try {
+            refreshOpenModal();
+          } catch (e) {}
+        }, 50);
+      }
+    } catch (e) {}
+
+    try {
+      const modal = document.getElementById("puzzle-modal");
+      if (modal && modal.style.display === "flex") {
+        try {
+          // Close the modal when a puzzle is correctly solved / picked up.
+          if (typeof closePuzzleModal === "function") closePuzzleModal();
+        } catch (e) {}
+        try {
+          // Ensure state is reset so next open shows page1 and fresh list
+          _openSetId = null;
+          const listEl = document.getElementById("puzzle-set-list");
+          if (listEl && typeof renderPuzzleSetList === "function")
+            renderPuzzleSetList(listEl);
+        } catch (e) {}
+      } else {
+        try {
+          if (typeof refreshOpenModal === "function") refreshOpenModal();
+        } catch (e) {}
+      }
+    } catch (e) {}
+
     try {
       const listEl = document.getElementById("puzzle-set-list");
       if (listEl && typeof renderPuzzleSetList === "function")
         renderPuzzleSetList(listEl);
-      const modal = document.getElementById("puzzle-modal");
-      if (modal && modal.style.display === "flex") {
-        // if the user is currently viewing this set, re-render that grid
-        if (_openSetId === setId) {
-          const grid = document.getElementById("puzzle-grid");
-          if (grid && typeof renderPuzzleGrid === "function")
-            renderPuzzleGrid(puzzleSet, grid);
+      const modal3 = document.getElementById("puzzle-modal");
+      if (modal3 && modal3.style.display === "flex") {
+        const grid = document.getElementById("puzzle-grid");
+        if (grid && typeof renderPuzzleGrid === "function") {
+          if (_openSetId && allPuzzles[_openSetId])
+            renderPuzzleGrid(allPuzzles[_openSetId], grid);
+          else renderPuzzleGrid(_currentSet, grid);
         }
       }
+    } catch (e) {}
+  } else {
+    try {
+      window.alert("不正解です。もう一度試してください。");
     } catch (e) {}
   }
 }
@@ -219,9 +337,7 @@ export function handleGetPuzzleSet(setId, playerPos, options = {}) {
   const puzzleSet = allPuzzles[setId];
   if (!puzzleSet) return;
   if (!puzzleSet.unlocked) puzzleSet.unlocked = true;
-  // unlock all pieces
   for (const p of puzzleSet.pieces) p.unlocked = true;
-  // remove tile from map if position provided
   if (playerPos && typeof playerPos.x === "number")
     setTile(
       playerPos.x,
@@ -229,10 +345,14 @@ export function handleGetPuzzleSet(setId, playerPos, options = {}) {
       0,
       typeof playerPos.floor === "number" ? playerPos.floor : undefined
     );
-  // show simple message
   try {
     if (!options.suppressAlert) {
       const message = "謎を入手した";
+      try {
+        console.log(
+          `[puzzle] picked up set: set=${setId} at=${playerPos?.x},${playerPos?.y},f=${playerPos?.floor}`
+        );
+      } catch (e) {}
       if (typeof showCustomAlert === "function") {
         showCustomAlert(message, { allowOverlayClose: true });
       } else {
@@ -241,27 +361,106 @@ export function handleGetPuzzleSet(setId, playerPos, options = {}) {
     }
   } catch (e) {}
 
-  // notify app that puzzle state changed so it can autosave
   try {
     emit("puzzleChanged");
   } catch (e) {}
 
-  // refresh puzzle list/modal UI immediately if the puzzle modal is open
+  // always refresh puzzle modal UI after puzzle state changes so it never
+  // becomes stale (especially when picking up entire sets)
   try {
-    const listEl = document.getElementById("puzzle-set-list");
-    if (listEl && typeof renderPuzzleSetList === "function")
-      renderPuzzleSetList(listEl);
+    if (typeof refreshOpenModal === "function") {
+      setTimeout(() => {
+        try {
+          refreshOpenModal();
+        } catch (e) {}
+      }, 50);
+    }
+  } catch (e) {}
+
+  try {
     const modal = document.getElementById("puzzle-modal");
     if (modal && modal.style.display === "flex") {
-      // render this set's grid if it's currently open
-      if (_openSetId === setId) {
-        const grid = document.getElementById("puzzle-grid");
-        if (grid && typeof renderPuzzleGrid === "function")
-          renderPuzzleGrid(puzzleSet, grid);
-      }
+      try {
+        if (typeof closePuzzleModal === "function") closePuzzleModal();
+      } catch (e) {}
+      try {
+        setTimeout(() => {
+          try {
+            const modal2 = document.getElementById("puzzle-modal");
+            const page1 = document.getElementById("puzzle-page-1");
+            const page2 = document.getElementById("puzzle-page-2");
+            if (page1) page1.style.display = "block";
+            if (page2) page2.style.display = "none";
+            if (modal2) modal2.style.display = "flex";
+            _openSetId = null;
+            const listEl2 = document.getElementById("puzzle-set-list");
+            if (listEl2 && typeof renderPuzzleSetList === "function")
+              renderPuzzleSetList(listEl2);
+          } catch (e) {}
+        }, 50);
+      } catch (e) {}
+    } else {
+      const listEl = document.getElementById("puzzle-set-list");
+      if (listEl && typeof renderPuzzleSetList === "function")
+        renderPuzzleSetList(listEl);
+    }
+  } catch (e) {}
+
+  try {
+    if (
+      window &&
+      window.__overlayManager &&
+      typeof window.__overlayManager.refreshOverlaysForFloor === "function"
+    ) {
+      try {
+        const floor =
+          typeof playerPos?.floor === "number"
+            ? playerPos.floor
+            : mapService.getFloor();
+        window.__overlayManager.refreshOverlaysForFloor(floor);
+      } catch (e) {}
     }
   } catch (e) {}
 }
+
+// Ensure we refresh modal content when it's opened externally
+try {
+  if (typeof document !== "undefined") {
+    document.addEventListener("puzzleModalOpened", (e) => {
+      try {
+        const setId = e && e.detail && e.detail.setId;
+        // If modal opened without a specific setId, always reset to page1 and
+        // clear any remembered open set. This prevents remembering the last
+        // opened page between openings.
+        if (typeof setId === "undefined" || setId === null) {
+          _openSetId = null;
+          const page1 = document.getElementById("puzzle-page-1");
+          const page2 = document.getElementById("puzzle-page-2");
+          try {
+            if (page1) page1.style.display = "block";
+            if (page2) page2.style.display = "none";
+          } catch (e2) {}
+          const listEl = document.getElementById("puzzle-set-list");
+          if (listEl && typeof renderPuzzleSetList === "function")
+            renderPuzzleSetList(listEl);
+          return;
+        }
+
+        const target = setId || _openSetId;
+        if (target) {
+          const grid = document.getElementById("puzzle-grid");
+          if (
+            grid &&
+            typeof renderPuzzleGrid === "function" &&
+            allPuzzles[target]
+          ) {
+            renderPuzzleGrid(allPuzzles[target], grid);
+          }
+        }
+      } catch (err) {}
+    });
+  }
+} catch (e) {}
 
 export function renderPuzzleSetList(container) {
   if (!container) return;
@@ -291,8 +490,14 @@ export function renderPuzzleSetList(container) {
 export function openPuzzleSet(setId) {
   const set = allPuzzles[setId];
   if (!set) return;
-  // show modal
-  openPuzzleModal();
+  try {
+    if (typeof document !== "undefined") {
+      document.dispatchEvent(
+        new CustomEvent("puzzleModalWillOpen", { detail: { setId } })
+      );
+    }
+  } catch (e) {}
+  openPuzzleModal(setId);
 
   const puzzlePage1 = document.getElementById("puzzle-page-1");
   const puzzlePage2 = document.getElementById("puzzle-page-2");
@@ -300,101 +505,18 @@ export function openPuzzleSet(setId) {
   const puzzleGrid = document.getElementById("puzzle-grid");
 
   if (puzzleGridTitle) puzzleGridTitle.textContent = set.title || setId;
-  if (puzzlePage1) puzzlePage1.style.display = "none";
-  if (puzzlePage2) puzzlePage2.style.display = "flex";
 
-  // remember which set is open so we can refresh it from pickups
+  // When opening a specific set from the list, show page2 (the grid) so the
+  // user sees the pieces immediately. Page1 remains the default when the
+  // modal is opened generally (handled in openPuzzleModal).
+  try {
+    if (puzzlePage1) puzzlePage1.style.display = "none";
+    if (puzzlePage2) puzzlePage2.style.display = "flex";
+  } catch (e) {}
+
   _openSetId = setId;
 
-  // render pieces into grid
   if (typeof renderPuzzleGrid === "function") renderPuzzleGrid(set, puzzleGrid);
-
-  // bottom images
-  const bottomWrap = document.getElementById("puzzle-bottom-images");
-  const bottom1 = document.getElementById("puzzle-bottom-1");
-  const bottom2 = document.getElementById("puzzle-bottom-2");
-  if (bottomWrap && bottom1 && bottom2) {
-    try {
-      // If this is an elevator puzzle set, prefer per-floor change state to
-      // compute dynamic bottom images named like:
-      // img/elevtext_(inc)_(up|down).png
-      // img/elevbox_(inc)_(up|down).png
-      // Note: per user request, the "box" image uses the opposite direction
-      // to the elevator "dir" (example: dir=下 -> elevtext_2_down, elevbox_2_up).
-      const isElevator = String(setId || "")
-        .toLowerCase()
-        .startsWith("elevator_");
-      if (isElevator) {
-        // map setId -> floor number (e.g. elevator_1f -> 1, elevator_b1 -> 0)
-        let floor = null;
-        const id = String(setId || "").toLowerCase();
-        if (id.includes("1f")) floor = 1;
-        else if (id.includes("2f")) floor = 2;
-        else if (id.includes("3f")) floor = 3;
-        else if (id.includes("4f")) floor = 4;
-        else if (id.includes("5f")) floor = 5;
-        else if (id.includes("b1")) floor = 0;
-
-        // default images
-        let img1 =
-          (Array.isArray(set.bottomImages) && set.bottomImages[0]) ||
-          "img/elevtext_1_up.png";
-        let img2 =
-          (Array.isArray(set.bottomImages) && set.bottomImages[1]) ||
-          "img/elevbox_1_up.png";
-
-        try {
-          window.__changeState = window.__changeState || {};
-          const per =
-            (window.__changeState.elevatorPerFloor || {})[floor] || null;
-          // Only compute dynamic images when a per-floor config exists.
-          if (per) {
-            // derive stored inc and dir (fall back to reasonable defaults)
-            const storedInc =
-              typeof per.inc === "number" ? Math.max(0, per.inc) : 0;
-            // displayed count is base (1) + storedInc
-            const displayCount = storedInc + 1;
-            const dir =
-              per.dir || per.direction || (per.type === "反転" ? "下" : "上");
-            const dirMap = { 上: "up", 下: "down" };
-            const dirStr = dirMap[dir] || "up";
-            // box image uses opposite direction per user's example
-            const boxOpp = dir === "上" ? "down" : "up";
-
-            img1 = `img/elevtext_${displayCount}_${dirStr}.png`;
-            img2 = `img/elevbox_${displayCount}_${boxOpp}.png`;
-          }
-        } catch (e) {
-          // leave defaults if anything goes wrong
-        }
-
-        // bottom1.src = img1;
-        // bottom2.src = img2;
-        // bottomWrap.style.display = "flex";
-      } else {
-        if (Array.isArray(set.bottomImages) && set.bottomImages.length >= 2) {
-          // bottom1.src = set.bottomImages[0] || "";
-          // bottom2.src = set.bottomImages[1] || "";
-          // bottomWrap.style.display = "flex";
-        } else {
-          // bottom1.src = "";
-          // bottom2.src = "";
-          // bottomWrap.style.display = "none";
-        }
-      }
-    } catch (e) {
-      // fallback to original behavior if something fails
-      if (Array.isArray(set.bottomImages) && set.bottomImages.length >= 2) {
-        // bottom1.src = set.bottomImages[0] || "";
-        // bottom2.src = set.bottomImages[1] || "";
-        // bottomWrap.style.display = "flex";
-      } else {
-        // bottom1.src = "";
-        // bottom2.src = "";
-        // bottomWrap.style.display = "none";
-      }
-    }
-  }
 }
 
 export function renderPuzzleGrid(set, container) {
@@ -434,7 +556,6 @@ export function renderPuzzleGrid(set, container) {
   });
 }
 
-// Serialize puzzle state (unlocked flags and solved answers)
 export function serialize() {
   try {
     const out = {};
@@ -462,7 +583,6 @@ export function serialize() {
   }
 }
 
-// Deserialize puzzle state produced by serialize()
 export function deserialize(payload) {
   try {
     if (!payload || typeof payload !== "object") return;
@@ -488,5 +608,22 @@ export function deserialize(payload) {
     }
   } catch (e) {
     console.error("puzzleManager.deserialize failed", e);
+  }
+}
+
+export function refreshOpenModal() {
+  try {
+    const modal = document.getElementById("puzzle-modal");
+    if (!modal || modal.style.display !== "flex") return;
+    const listEl = document.getElementById("puzzle-set-list");
+    if (listEl && typeof renderPuzzleSetList === "function")
+      renderPuzzleSetList(listEl);
+    if (_openSetId) {
+      const grid = document.getElementById("puzzle-grid");
+      if (grid && typeof renderPuzzleGrid === "function")
+        renderPuzzleGrid(allPuzzles[_openSetId], grid);
+    }
+  } catch (e) {
+    console.error("refreshOpenModal failed", e);
   }
 }

@@ -73,7 +73,10 @@ export function showInfoDetail(infoKey, titleEl, contentEl) {
             typeof window !== "undefined" && window.__playerInstance
               ? window.__playerInstance
               : null;
-          const floor = player ? player.floor : null;
+          // For box_3f (ムーブ), the description refers specifically to 3F.
+          // Use the magic's canonical floor (3) rather than the player's current floor
+          // so that the modal accurately reflects the per-floor チェンジの状況 for the magic.
+          const floor = key === "box_3f" ? 3 : player ? player.floor : null;
           const perFloorMove =
             typeof window !== "undefined" &&
             window.__changeStateByFloor &&
@@ -92,6 +95,11 @@ export function showInfoDetail(infoKey, titleEl, contentEl) {
           const moveIsInverted = (() => {
             const c = moveCfg;
             if (!c) return false;
+            // Prefer explicit opt field when available (新しい保存形式)
+            if (typeof c.opt !== "undefined" && c.opt !== null) {
+              return String(c.opt) === "違う";
+            }
+            // legacy detection: keep previous heuristics
             if (c.type === "反転") return true;
             if (c.invert === true || c.reversed === true || c.revert === true)
               return true;
@@ -106,11 +114,8 @@ export function showInfoDetail(infoKey, titleEl, contentEl) {
             s = s.replace(/違う/g, "同じ");
             s = s.replace(/__TMP_SAME__/g, "違う");
           } else {
-            // ensure '同じ' is shown (swap back if needed)
-            s = s.replace(/違う/g, "__TMP_DIFF__");
-            s = s.replace(/同じ/g, "違う");
-            s = s.replace(/__TMP_DIFF__/g, "同じ");
-            // The above ensures that if content was previously modified to '違う', it is restored to '同じ'.
+            // ensure '同じ' is shown (normalize any previous swaps)
+            s = s.replace(/違う/g, "同じ");
           }
         } catch (e) {
           // ignore errors and fall back to existing highlighting behavior
@@ -232,6 +237,24 @@ export function initInfoModalHandlers() {
     infoModal.addEventListener("click", (e) => {
       if (e.target === infoModal) closeInfoModal(infoModal);
     });
+
+    // page1 close (top-right ×) for info (added)
+    const infoClose = document.getElementById("info-close-btn");
+    if (infoClose) {
+      infoClose.addEventListener("click", () => {
+        closeInfoModal(infoModal);
+      });
+    }
+
+    // back button on page2 -> return to page1 (added)
+    const infoBack = document.getElementById("info-back-btn");
+    if (infoBack) {
+      infoBack.addEventListener("click", () => {
+        if (infoPage2) infoPage2.style.display = "none";
+        if (infoPage1) infoPage1.style.display = "block";
+      });
+    }
+
     // page2 close (top-right ×) for info
     const infoClose2 = document.getElementById("info-close2-btn");
     if (infoClose2)

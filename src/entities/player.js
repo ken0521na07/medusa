@@ -161,27 +161,75 @@ export default class Player extends GameObject {
   triggerFall(message, options = {}) {
     const doOnClose = () => {
       try {
-        this.mapService.onFall();
+        // allow callers to suppress the default full-floor reset on fall
+        if (
+          !(typeof window !== "undefined" && window.__suppressMapResetOnFall)
+        ) {
+          this.mapService.onFall();
+        }
       } catch (e) {}
       // reset snake positions to their initial state when player dies
       try {
-        if (typeof snakeManager.resetPositions === "function") {
-          snakeManager.resetPositions();
+        if (
+          !(typeof window !== "undefined" && window.__suppressMapResetOnFall)
+        ) {
+          if (typeof snakeManager.resetPositions === "function") {
+            snakeManager.resetPositions();
+          }
         }
       } catch (e) {}
       try {
         // teleport to recorded start position for the current floor if present
         const floor = this.floor || START_FLOOR;
-        const start = this.startPositions && this.startPositions[floor];
-        if (
-          start &&
-          typeof start.x === "number" &&
-          typeof start.y === "number"
-        ) {
-          this.teleport(start.x, start.y, floor);
+        // If caller provided a teleportTo override, use it (restores to a specific coord)
+        if (options && options.teleportTo) {
+          const t = options.teleportTo;
+          try {
+            if (
+              typeof t.x === "number" &&
+              typeof t.y === "number" &&
+              typeof t.floor === "number"
+            ) {
+              this.teleport(t.x, t.y, t.floor);
+            } else {
+              // fallback to recorded start position
+              const start = this.startPositions && this.startPositions[floor];
+              if (
+                start &&
+                typeof start.x === "number" &&
+                typeof start.y === "number"
+              ) {
+                this.teleport(start.x, start.y, floor);
+              } else {
+                this.teleport(START_POS_X, START_POS_Y, START_FLOOR);
+              }
+            }
+          } catch (e) {
+            try {
+              const start = this.startPositions && this.startPositions[floor];
+              if (
+                start &&
+                typeof start.x === "number" &&
+                typeof start.y === "number"
+              ) {
+                this.teleport(start.x, start.y, floor);
+              } else {
+                this.teleport(START_POS_X, START_POS_Y, START_FLOOR);
+              }
+            } catch (e2) {}
+          }
         } else {
-          // fallback to global START_* constants
-          this.teleport(START_POS_X, START_POS_Y, START_FLOOR);
+          const start = this.startPositions && this.startPositions[floor];
+          if (
+            start &&
+            typeof start.x === "number" &&
+            typeof start.y === "number"
+          ) {
+            this.teleport(start.x, start.y, floor);
+          } else {
+            // fallback to global START_* constants
+            this.teleport(START_POS_X, START_POS_Y, START_FLOOR);
+          }
         }
       } catch (e) {}
       // call optional external onClose after internal death handling
@@ -220,6 +268,11 @@ export default class Player extends GameObject {
   }
 
   move(dx, dy) {
+    // record last position so death handlers can restore the player to pre-move coords
+    try {
+      this._lastPos = { x: this.gridX, y: this.gridY, floor: this.floor };
+    } catch (e) {}
+
     // suppress rapid inputs after teleport/fall
     if (Date.now() < (this._suppressUntil || 0)) return;
     // determine intended facing direction, but don't apply it yet.
@@ -265,6 +318,37 @@ export default class Player extends GameObject {
 
     const targetTile = this.mapService.getTile(newX, newY, this.floor);
 
+    // Treat statue tiles as walls (impassable). Prevent player from moving into any
+    // tile whose map value starts with "statue" or matches known statue constants.
+    try {
+      if (typeof targetTile === "string" && targetTile.startsWith("statue")) {
+        // behave like a wall: face the attempted direction but do not move
+        try {
+          this.direction = intendedDirection;
+          this.animationFrame = 0;
+          this.sprite.texture =
+            this.textures[this.direction][this.animationFrame];
+          this._suppressUntil = Date.now() + 150;
+        } catch (e) {}
+        return;
+      }
+      if (
+        targetTile === TILE.STATUE_J ||
+        targetTile === TILE.STATUE_F ||
+        targetTile === TILE.STATUE_NOMOVE ||
+        targetTile === TILE.STATUE_M
+      ) {
+        try {
+          this.direction = intendedDirection;
+          this.animationFrame = 0;
+          this.sprite.texture =
+            this.textures[this.direction][this.animationFrame];
+          this._suppressUntil = Date.now() + 150;
+        } catch (e) {}
+        return;
+      }
+    } catch (e) {}
+
     // handle medusa tile similarly to other special tiles inside the switch
     switch (targetTile) {
       case TILE.MEDUSA:
@@ -299,10 +383,16 @@ export default class Player extends GameObject {
     switch (targetTile) {
       case TILE.WALL:
       case 1:
-        // wall: do not move, show standing frame
-        this.animationFrame = 0;
-        this.sprite.texture =
-          this.textures[this.direction][this.animationFrame];
+        // wall: face the attempted direction but do not move
+        try {
+          this.direction = intendedDirection;
+          this.animationFrame = 0;
+          this.sprite.texture =
+            this.textures[this.direction][this.animationFrame];
+          try {
+            this._suppressUntil = Date.now() + 150;
+          } catch (e) {}
+        } catch (e) {}
         return;
       case TILE.HOLE:
       case "hole":

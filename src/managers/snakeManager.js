@@ -15,6 +15,7 @@ let _nextId = 1;
 let _appLayers = null;
 let _floorListener = null;
 let _assetsLoaded = false;
+let _playerMoveListener = null; // NEW: listener for playerMoved events so snakes step on player moves
 
 // Ensure each snake GameObject reflects the current model (x,y,floor)
 function _ensureSpritesMatchMap() {
@@ -313,6 +314,37 @@ _floorListener = () => {
 };
 try {
   on("floorChanged", _floorListener);
+} catch (e) {}
+
+// Register playerMoved listener so snakes advance after the player moves.
+// This mirrors the game behavior where snakes step once per player move.
+try {
+  if (_playerMoveListener) off("playerMoved", _playerMoveListener);
+} catch (e) {}
+_playerMoveListener = function () {
+  try {
+    // only advance snakes visible on the current floor to minimize work
+    const moved = stepSnakes({ onlyVisible: true });
+    if (!moved) return;
+    // If a snake moved onto the player's current tile, trigger fall.
+    try {
+      if (typeof window !== "undefined" && window.__playerInstance) {
+        const p = window.__playerInstance;
+        if (p && typeof p.gridX === "number") {
+          const s = getSnakeAt(p.gridX, p.gridY, p.floor);
+          if (s) {
+            try {
+              if (typeof p.triggerFall === "function")
+                p.triggerFall("ヘビを見て石化してしまった...！");
+            } catch (e) {}
+          }
+        }
+      }
+    } catch (e) {}
+  } catch (e) {}
+};
+try {
+  on("playerMoved", _playerMoveListener);
 } catch (e) {}
 
 // internal helper to add a snake definition to runtime
