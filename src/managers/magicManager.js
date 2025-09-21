@@ -169,10 +169,10 @@ function _ensureMagicUI() {
       // Not on an elev tile. If the typed word would be correct elsewhere, tell player to stand on correct circle.
       if (matchesAnywhere.length > 0) {
         try {
-          showCustomAlert("正しい魔法陣の上で唱えよう");
+          showCustomAlert("呪文が違っている");
         } catch (e) {
           try {
-            window.alert("正しい魔法陣の上で唱えよう");
+            window.alert("呪文が違っている");
           } catch (e2) {}
         }
         return;
