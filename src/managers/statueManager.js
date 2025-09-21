@@ -985,6 +985,8 @@ export function serialize() {
       nameKey: s.nameKey,
       moved: !!s.moved,
       removed: !!s.removed,
+      // persist whether the sprite is currently broken (only true for falls)
+      broken: !!(s.obj && s.obj.broken),
       initialX: s.initialX,
       initialY: s.initialY,
       initialFloor: s.initialFloor,
@@ -1013,6 +1015,8 @@ export function deserialize(arr) {
             typeof item.floor === "number" ? item.floor : found.floor;
           found.moved = !!item.moved;
           found.removed = !!item.removed;
+          // respect persisted broken flag (only set when statue actually fell)
+          found.broken = !!item.broken;
 
           // reconcile map tile and sprite according to removed/moved flags
           try {
@@ -1049,9 +1053,9 @@ export function deserialize(arr) {
                 if (found.obj) {
                   found.obj.gridX = found.x;
                   found.obj.gridY = found.y;
-                  // apply broken texture if statue was moved/broken
+                  // apply broken texture only when persisted as broken
                   try {
-                    if (found.moved) {
+                    if (found.broken) {
                       const brokenTex = PIXI.Texture.from(
                         "img/statue_broken.png"
                       );

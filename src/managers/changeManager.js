@@ -344,6 +344,22 @@ export function openChangeModal() {
           }
 
           const newInc = prevInc + num;
+          // Special rule (3F): the second +1 (reaching inc=2) is only allowed after info_torch is obtained
+          try {
+            if (floor === 3 && newInc === 2) {
+              const torchInfo = allInfo && allInfo.info_torch;
+              if (!(torchInfo && torchInfo.unlocked)) {
+                // close keyword modal (magic modal) then show invalid alert
+                try {
+                  const keywordModal = document.getElementById("keyword-modal");
+                  if (keywordModal) keywordModal.style.display = "none";
+                } catch (e) {}
+                invalid();
+                return;
+              }
+            }
+          } catch (e) {}
+
           // allowed cumulative increments for this floor
           const allowedIncs = targetCfg["数字増加"]; // e.g. [1,2]
           if (!Array.isArray(allowedIncs) || !allowedIncs.includes(newInc)) {

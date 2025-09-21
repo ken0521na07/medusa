@@ -266,10 +266,10 @@ function _ensureMagicUI() {
       if (!ok) {
         // Word was correct for this floor but チェンジの状況 doesn't match.
         try {
-          showCustomAlert("チェンジの状況が違うようだ");
+          showCustomAlert("何かが間違っているようだ");
         } catch (e) {
           try {
-            window.alert("チェンジの状況が違うようだ");
+            window.alert("何かが間違っているようだ");
           } catch (e2) {}
         }
         return;
