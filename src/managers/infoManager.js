@@ -73,13 +73,16 @@ export function showInfoDetail(infoKey, titleEl, contentEl) {
             typeof window !== "undefined" && window.__playerInstance
               ? window.__playerInstance
               : null;
-          const floor = player ? player.floor : null;
+          // For box_3f (ムーブ), the description refers specifically to 3F.
+          // Use the magic's canonical floor (3) rather than the player's current floor
+          const floor = key === "box_3f" ? 3 : player ? player.floor : null;
           const perFloorMove =
             typeof window !== "undefined" &&
             window.__changeStateByFloor &&
             floor != null
               ? window.__changeStateByFloor[floor] &&
-                window.__changeStateByFloor[floor]["ムーブ"]
+                (window.__changeStateByFloor[floor]["ムーブ"] ||
+                  window.__changeStateByFloor[floor]["move"])
               : null;
           const globalMove =
             typeof window !== "undefined" &&
@@ -96,26 +99,18 @@ export function showInfoDetail(infoKey, titleEl, contentEl) {
             if (c.invert === true || c.reversed === true || c.revert === true)
               return true;
             if (c.dir === "下" || c.direction === "下") return true;
+            // also support new opt field where opt === '違う'
+            if (c.opt && String(c.opt) === "違う") return true;
             return false;
           })();
 
-          if (moveIsInverted) {
-            // show '違う' instead of '同じ'
-            // perform a safe swap in case content already contains '違う'
-            s = s.replace(/同じ/g, "__TMP_SAME__");
-            s = s.replace(/違う/g, "同じ");
-            s = s.replace(/__TMP_SAME__/g, "違う");
-          } else {
-            // ensure '同じ' is shown (swap back if needed)
-            s = s.replace(/違う/g, "__TMP_DIFF__");
-            s = s.replace(/同じ/g, "違う");
-            s = s.replace(/__TMP_DIFF__/g, "同じ");
-            // The above ensures that if content was previously modified to '違う', it is restored to '同じ'.
-          }
+          // Determine desired displayed token and normalize content to it
+          const desired = moveIsInverted ? "違う" : "同じ";
+          s = s.replace(/同じ|違う/g, desired);
         } catch (e) {
           // ignore errors and fall back to existing highlighting behavior
         }
-        // highlight '同じ' or '違う' depending on current content after swap
+        // highlight '同じ' or '違う' depending on current content after normalization
         if (/違う/.test(s)) {
           s = s.replace(/違う/, `<span class="change-highlight">違う</span>`);
         } else {
