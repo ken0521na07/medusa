@@ -40,6 +40,12 @@ import { setupUI } from "./ui/uiSetup.js";
                   localStorage.removeItem("medusa_save_v1");
                 } catch (ex) {}
               }
+
+              // Also clear elevator intro flag so first-time elevator messages reappear
+              try {
+                localStorage.removeItem("elevatorIntroShown");
+              } catch (e) {}
+
               try {
                 // small timeout to ensure any pending save is cancelled
                 setTimeout(() => {
@@ -52,6 +58,10 @@ import { setupUI } from "./ui/uiSetup.js";
           } catch (e) {
             try {
               localStorage.removeItem("medusa_save_v1");
+              // Also clear elevator intro flag
+              try {
+                localStorage.removeItem("elevatorIntroShown");
+              } catch (ex) {}
               setTimeout(() => {
                 try {
                   window.location.reload();
@@ -62,6 +72,9 @@ import { setupUI } from "./ui/uiSetup.js";
         } catch (e) {
           try {
             localStorage.removeItem("medusa_save_v1");
+            try {
+              localStorage.removeItem("elevatorIntroShown");
+            } catch (ex) {}
             window.location.reload();
           } catch (ex) {}
         }

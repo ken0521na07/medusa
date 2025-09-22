@@ -614,10 +614,39 @@ function _ensureMagicUI() {
 
   // ensure submit and key handlers clear input (submit already calls checkMagic)
   magicSubmit.addEventListener("click", checkMagic);
+
+  // IME composition tracking: when using an IME, Enter should commit composition but not submit the spell.
+  // Track composition state on the input and ignore Enter when composing.
+  magicInput.addEventListener("compositionstart", () => {
+    try {
+      magicInput.dataset.composing = "1";
+    } catch (e) {}
+  });
+  magicInput.addEventListener("compositionend", () => {
+    try {
+      // clear flag when composition finishes
+      delete magicInput.dataset.composing;
+    } catch (e) {}
+  });
+
   magicInput.addEventListener("keydown", (e) => {
     try {
       if (e.key === "Enter") {
-        checkMagic();
+        // If IME composition is active, do not submit on Enter — allow IME commit
+        const composing = e.isComposing || magicInput.dataset.composing === "1";
+        if (composing) {
+          return;
+        }
+        try {
+          e.preventDefault();
+        } catch (e2) {}
+        // perform magic check and ensure the input is cleared afterwards
+        try {
+          checkMagic();
+        } catch (e3) {}
+        try {
+          clearMagicInput();
+        } catch (e4) {}
       }
     } catch (e) {}
   });
@@ -630,7 +659,7 @@ function _ensureMagicUI() {
   // ensure magicSubmit click also clears input after processing (redundant but defensive)
   magicSubmit.addEventListener("click", () => {
     try {
-      magicInput.value = "";
+      clearMagicInput();
     } catch (e) {}
   });
 }
