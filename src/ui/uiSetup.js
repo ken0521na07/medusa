@@ -492,21 +492,29 @@ export async function setupUI() {
       return;
     }
 
-    // medusa front interaction: if facing medusa and medusaDefeated flag is true,
-    // do not petrify and allow A to 'defeat' medusa when pressed
+    // medusa front interaction: facing medusa -> do NOT petrify; allow defeat via A when 6 correct torches placed
     try {
-      if (
-        (frontTile === TILE.MEDUSA || frontTile === "medusa") &&
-        playerState &&
-        playerState.medusaDefeated
-      ) {
+      if (frontTile === TILE.MEDUSA || frontTile === "medusa") {
+        // do not petrify on sight. If six correct torches are placed, defeat medusa when A is pressed.
         try {
-          showCustomAlert("メドゥーサを討伐した！");
-        } catch (e) {
-          try {
-            window.alert("メドゥーサを討伐した！");
-          } catch (e2) {}
-        }
+          let correctCount = 0;
+          for (const k of Object.keys(window.__torches || {})) {
+            const t = window.__torches[k];
+            if (t && t.isCorrect) correctCount++;
+          }
+          if (correctCount >= 6) {
+            try {
+              playerState.medusaDefeated = true;
+            } catch (e) {}
+            try {
+              showCustomAlert("メドゥーサを討伐した！");
+            } catch (e) {
+              try {
+                window.alert("メドゥーサを討伐した！");
+              } catch (e2) {}
+            }
+          }
+        } catch (e) {}
         return;
       }
     } catch (e) {}
@@ -1525,16 +1533,26 @@ export async function setupUI() {
           allInfo[origBoxKey] &&
           !!allInfo[origBoxKey].unlocked;
 
+        // Keep overlays for medusa tiles as well (current or original)
+        const isMedusaCurrent = tile === TILE.MEDUSA || tile === "medusa";
+        const isMedusaOrig = origTile === TILE.MEDUSA || origTile === "medusa";
+
         if (
           !isCurrentBox &&
           !isCurrentPuzzle &&
-          !shouldShowBecauseOfOriginalUnlocked
+          !shouldShowBecauseOfOriginalUnlocked &&
+          !isMedusaCurrent &&
+          !isMedusaOrig
         ) {
           _removeOverlayKey(key);
           return;
         }
 
         let imgPath = null;
+        // medusa overlay: show medusa image when tile/current or original is medusa
+        if (isMedusaCurrent || isMedusaOrig) {
+          imgPath = "img/medusa.png";
+        }
         // boxes: show closed or opened depending on allInfo unlocked
         if (isCurrentBox || origIsBox) {
           // determine which info key to consult: prefer current tile if string, else original

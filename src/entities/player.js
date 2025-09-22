@@ -93,20 +93,10 @@ export default class Player extends GameObject {
       if (snakeManager.getSnakeAt(this.gridX, this.gridY, this.floor))
         return true;
     } catch (e) {}
-    // If medusa is on the player's own tile and medusa still active, treat as seen
-    try {
-      const myTile = this.mapService.getTile(
-        this.gridX,
-        this.gridY,
-        this.floor
-      );
-      if (
-        (myTile === TILE.MEDUSA || myTile === "medusa") &&
-        !(playerState && playerState.medusaDefeated)
-      ) {
-        return true;
-      }
-    } catch (e) {}
+
+    // NOTE: medusa no longer counts as a lethal sight-source in any case.
+    // (previous code treated medusa on the player's tile or in sight as lethal)
+
     const dirMap = {
       down: [0, 1],
       up: [0, -1],
@@ -127,16 +117,9 @@ export default class Player extends GameObject {
       // stop if a wall (or numeric 1) blocks the view
       if (t === TILE.WALL || t === 1) return false;
       // stop if a statue (or any tile that starts with "statue_") blocks the view
-      // this prevents petrification when a snake is behind a statue
       if (typeof t === "string" && t.startsWith("statue")) return false;
       // stop if a statue constant is used
       if (t === TILE.STATUE_J) return false;
-      // medusa tile: if present and not disabled, treat as lethal (like snake)
-      if (
-        (t === TILE.MEDUSA || t === "medusa") &&
-        !(playerState && playerState.medusaDefeated)
-      )
-        return true;
       // check dynamic snake entity as well (only after blockers checked)
       try {
         if (snakeManager.getSnakeAt(x, y, this.floor)) return true;
@@ -278,22 +261,7 @@ export default class Player extends GameObject {
     switch (targetTile) {
       case TILE.MEDUSA:
       case "medusa":
-        // If medusa already defeated, block movement (impassable like a wall)
-        try {
-          if (playerState && playerState.medusaDefeated) {
-            // face the medusa tile but do not move into it
-            this.direction = intendedDirection;
-            this.animationFrame = 0;
-            this.sprite.texture =
-              this.textures[this.direction][this.animationFrame];
-            try {
-              this._suppressUntil = Date.now() + 300;
-            } catch (e) {}
-            return;
-          }
-        } catch (e) {}
-
-        // Medusa is alive: stepping onto it petrifies the player (like seeing a snake)
+        // Treat Medusa as an impassable, non-lethal obstacle: face it but do not petrify.
         this.direction = intendedDirection;
         this.animationFrame = 0;
         this.sprite.texture =
@@ -301,7 +269,6 @@ export default class Player extends GameObject {
         try {
           this._suppressUntil = Date.now() + 300;
         } catch (e) {}
-        this.triggerFall("メドゥーサを見て石化してしまった...！");
         return;
     }
 
