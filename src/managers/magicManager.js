@@ -277,6 +277,7 @@ function _ensureMagicUI() {
 
       // Passed all checks: perform teleport
       try {
+        // perform teleport first
         if (typeof window.teleportPlayer === "function") {
           window.teleportPlayer(
             candidate.dest.x,
@@ -286,7 +287,61 @@ function _ensureMagicUI() {
         } else if (player && typeof player.teleport === "function") {
           player.teleport(candidate.dest.x, candidate.dest.y, candidate.dest.f);
         }
-        showCustomAlert("魔法が唱えられた！移動した。");
+
+        // Decide which message to show. Default: formatted move message.
+        try {
+          const fromF = Number(floor);
+          const toF = Number(candidate.dest.f);
+          const defaultMsg = `「エレベ」を唱え、${fromF}Fから${toF}Fに移動した。`;
+
+          // Special first-time messages for specific transitions
+          const special = {
+            "1-2": "「エレべ」を唱え、1Fから2Fに移動した。封筒Aを開こう",
+            "2-3": "「エレべ」を唱え、2Fから3Fに移動した。封筒Bを開こう",
+            "3-4": "「エレべ」を唱え、3Fから4Fに移動した。封筒Cを開こう",
+          };
+
+          const transitionKey = `${fromF}-${toF}`;
+
+          let shown = {};
+          try {
+            const raw = localStorage.getItem("elevatorIntroShown");
+            shown = raw ? JSON.parse(raw) : {};
+          } catch (e) {
+            shown = {};
+          }
+
+          if (special[transitionKey] && !shown[transitionKey]) {
+            // show special modal and persist that we've shown it
+            try {
+              showCustomAlert(special[transitionKey]);
+            } catch (e) {
+              try {
+                window.alert(special[transitionKey]);
+              } catch (e2) {}
+            }
+            try {
+              shown[transitionKey] = true;
+              localStorage.setItem("elevatorIntroShown", JSON.stringify(shown));
+            } catch (e) {}
+          } else {
+            try {
+              showCustomAlert(defaultMsg);
+            } catch (e) {
+              try {
+                window.alert(defaultMsg);
+              } catch (e2) {}
+            }
+          }
+        } catch (e) {
+          try {
+            showCustomAlert("魔法が唱えられた！移動した。");
+          } catch (e2) {
+            try {
+              window.alert("魔法が唱えられた！移動した。");
+            } catch (e3) {}
+          }
+        }
       } catch (e) {
         try {
           window.alert("魔法が唱えられた！正解です。");
