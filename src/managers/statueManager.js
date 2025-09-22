@@ -524,6 +524,63 @@ export function handleMoveByDisplayName(displayName, dir) {
   if (!targets || targets.length === 0)
     return { ok: false, msg: "その像は見つからないようだ" };
 
+  // Determine current ムーブ change state (prefer per-floor override) so we can
+  // enforce which statues are selectable depending on whether the move is
+  // inverted (exit) or normal (image).
+  try {
+    const playerFloor =
+      window && window.__playerInstance ? window.__playerInstance.floor : null;
+    const perFloorMove =
+      window.__changeStateByFloor && window.__changeStateByFloor[playerFloor]
+        ? window.__changeStateByFloor[playerFloor]["ムーブ"]
+        : null;
+    const globalMove =
+      window.__changeState && window.__changeState.global
+        ? window.__changeState.global["ムーブ"] ||
+          window.__changeState.global["move"]
+        : null;
+    const moveChangeCfg = perFloorMove || globalMove;
+    const moveIsInverted = (() => {
+      const c = moveChangeCfg;
+      if (!c) return false;
+      if (c.type === "反転") return true;
+      if (c.invert === true || c.reversed === true || c.revert === true)
+        return true;
+      if (c.dir === "下" || c.direction === "下") return true;
+      return false;
+    })();
+
+    // Apply selection rules requested by design:
+    // - image (not inverted): only ジェシー on the same floor can be moved
+    // - exit (inverted): only statues other than ジェシー on different floors
+    try {
+      if (moveIsInverted) {
+        const filtered = targets.filter(
+          (t) =>
+            t.nameKey !== "statue_j" &&
+            typeof t.floor === "number" &&
+            t.floor !== playerFloor
+        );
+        if (!filtered || filtered.length === 0) {
+          return { ok: false, msg: "その像は動かせないようだ" };
+        }
+        // use effectiveTargets downstream (チェンジ の opt filtering may further refine)
+        var effectiveTargets = filtered;
+      } else {
+        const filtered = targets.filter(
+          (t) =>
+            t.nameKey === "statue_j" &&
+            typeof t.floor === "number" &&
+            t.floor === playerFloor
+        );
+        if (!filtered || filtered.length === 0) {
+          return { ok: false, msg: "その像は動かせないようだ" };
+        }
+        var effectiveTargets = filtered;
+      }
+    } catch (e) {}
+  } catch (e) {}
+
   // Restrict 'ジェシー' to only move 北. If any other direction is attempted,
   // silently reject with the requested message.
   try {
