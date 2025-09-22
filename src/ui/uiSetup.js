@@ -245,6 +245,16 @@ export async function setupUI() {
           player.floor
         );
         if (tileUnder === TILE.CHANGE || tileUnder === "change") {
+          // If the player has not unlocked チェンジ (box_change), do nothing silently
+          try {
+            if (
+              !(allInfo && allInfo.box_change && allInfo.box_change.unlocked)
+            ) {
+              // do not prompt or show any modal when not unlocked
+              return;
+            }
+          } catch (e) {}
+
           const posKey = `${player.gridX},${player.gridY},${player.floor}`;
           window.__lastChangePrompt = window.__lastChangePrompt || null;
           if (window.__lastChangePrompt !== posKey) {
