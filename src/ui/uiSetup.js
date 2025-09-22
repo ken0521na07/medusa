@@ -729,127 +729,139 @@ export async function setupUI() {
           return;
         }
       } else {
-        // existing handling: if a torch is already placed here, A picks it up
-        if (existingTorch) {
-          const removed = _removeTorchAt(x, y, player.floor);
-          if (removed) {
-            try {
-              playerState.torchCount = (playerState.torchCount || 0) + 1;
-            } catch (e) {}
-            try {
-              showCustomAlert("松明を回収した");
-            } catch (e) {}
-          }
-          return;
-        }
-
-        // Explicitly check the tile at the player's current floor/position
-        const tileAtPos = mapService.getTile(x, y, player.floor);
-        // Strict checks: only numeric 0 (floor) or explicit TORCH_CORRECT string are allowed
-        const isFloor = tileAtPos === 0 || tileAtPos === TILE.FLOOR;
-        const isCorrect =
-          tileAtPos === TILE.TORCH_CORRECT || tileAtPos === "torch_correct";
-
-        // Helper: map a tile value to TILE key name for logging
-        const getTileKeyName = (val) => {
-          try {
-            for (const k of Object.keys(TILE)) {
-              if (TILE[k] === val) return k;
-            }
-            // handle numeric 0 explicitly
-            if (val === 0) return "FLOOR";
-            if (typeof val === "string") return val.toUpperCase();
-          } catch (e) {}
-          return String(val);
-        };
-
-        // Determine original map tile at this location (based on ORIGINAL_MAPS)
-        let origTile = null;
+        // If player has torches but is standing on a puzzle tile (not floor/torch_correct),
+        // defer to the puzzle handling below instead of attempting to place a torch.
         try {
-          const om = ORIGINAL_MAPS || {};
-          const floorMap = om[player.floor] || om[String(player.floor)];
+          const tileAtPosForDecision = mapService.getTile(x, y, player.floor);
           if (
-            Array.isArray(floorMap) &&
-            floorMap[y] &&
-            typeof floorMap[y][x] !== "undefined"
+            !existingTorch &&
+            PUZZLE_TILE_KEYS.includes(tileAtPosForDecision)
           ) {
-            origTile = floorMap[y][x];
-          }
-        } catch (e) {
-          origTile = null;
-        }
-
-        // Log current and original tile types for debugging when attempting to place
-        try {
-          console.log(
-            `[torch] attempt at (${x},${y},f=${
-              player.floor
-            }) current=${getTileKeyName(tileAtPos)} original=${getTileKeyName(
-              origTile
-            )}`
-          );
-        } catch (e) {}
-
-        // Disallow placement if the original map tile wasn't FLOOR (0) or TORCH_CORRECT
-        const origIsFloor = origTile === 0 || origTile === TILE.FLOOR;
-        const origIsCorrect =
-          origTile === TILE.TORCH_CORRECT || origTile === "torch_correct";
-        if (!origIsFloor && !origIsCorrect) {
-          try {
-            showCustomAlert("そこには松明は置けない");
-          } catch (e) {}
-          return;
-        }
-
-        // If tile not floor/torch_correct at runtime: cannot place
-        if (!isFloor && !isCorrect) {
-          try {
-            showCustomAlert("そこには松明は置けない");
-          } catch (e) {}
-          return;
-        }
-
-        // Tile is valid for placement: attempt to place if the player has torches
-        if ((playerState.torchCount || 0) > 0) {
-          const ok = _placeTorchAt(x, y, player.floor, !!isCorrect);
-          if (ok) {
-            try {
-              playerState.torchCount = Math.max(
-                0,
-                (playerState.torchCount || 0) - 1
-              );
-            } catch (e) {}
-            try {
-              showCustomAlert("松明を設置した");
-            } catch (e) {}
-
-            // after placing, check win condition: 6 torches all on torch_correct tiles
-            try {
-              let correctCount = 0;
-              for (const k of Object.keys(window.__torches || {})) {
-                const t = window.__torches[k];
-                if (t && t.isCorrect) correctCount++;
-              }
-              if (correctCount >= 6) {
+            // do nothing here — allow subsequent puzzle switch logic to run
+          } else {
+            // existing handling: if a torch is already placed here, A picks it up
+            if (existingTorch) {
+              const removed = _removeTorchAt(x, y, player.floor);
+              if (removed) {
                 try {
-                  // warp player to (5,1,6)
-                  player.teleport(5, 1, 6);
-                  showCustomAlert(
-                    "石化が無効化され、メデューサを討伐する準備が整った。"
-                  );
+                  playerState.torchCount = (playerState.torchCount || 0) + 1;
+                } catch (e) {}
+                try {
+                  showCustomAlert("松明を回収した");
                 } catch (e) {}
               }
+              return;
+            }
+
+            // Explicitly check the tile at the player's current floor/position
+            const tileAtPos = mapService.getTile(x, y, player.floor);
+            // Strict checks: only numeric 0 (floor) or explicit TORCH_CORRECT string are allowed
+            const isFloor = tileAtPos === 0 || tileAtPos === TILE.FLOOR;
+            const isCorrect =
+              tileAtPos === TILE.TORCH_CORRECT || tileAtPos === "torch_correct";
+
+            // Helper: map a tile value to TILE key name for logging
+            const getTileKeyName = (val) => {
+              try {
+                for (const k of Object.keys(TILE)) {
+                  if (TILE[k] === val) return k;
+                }
+                // handle numeric 0 explicitly
+                if (val === 0) return "FLOOR";
+                if (typeof val === "string") return val.toUpperCase();
+              } catch (e) {}
+              return String(val);
+            };
+
+            // Determine original map tile at this location (based on ORIGINAL_MAPS)
+            let origTile = null;
+            try {
+              const om = ORIGINAL_MAPS || {};
+              const floorMap = om[player.floor] || om[String(player.floor)];
+              if (
+                Array.isArray(floorMap) &&
+                floorMap[y] &&
+                typeof floorMap[y][x] !== "undefined"
+              ) {
+                origTile = floorMap[y][x];
+              }
+            } catch (e) {
+              origTile = null;
+            }
+
+            // Log current and original tile types for debugging when attempting to place
+            try {
+              console.log(
+                `[torch] attempt at (${x},${y},f=${
+                  player.floor
+                }) current=${getTileKeyName(
+                  tileAtPos
+                )} original=${getTileKeyName(origTile)}`
+              );
             } catch (e) {}
+
+            // Disallow placement if the original map tile wasn't FLOOR (0) or TORCH_CORRECT
+            const origIsFloor = origTile === 0 || origTile === TILE.FLOOR;
+            const origIsCorrect =
+              origTile === TILE.TORCH_CORRECT || origTile === "torch_correct";
+            if (!origIsFloor && !origIsCorrect) {
+              try {
+                showCustomAlert("そこには松明は置けない");
+              } catch (e) {}
+              return;
+            }
+
+            // If tile not floor/torch_correct at runtime: cannot place
+            if (!isFloor && !isCorrect) {
+              try {
+                showCustomAlert("そこには松明は置けない");
+              } catch (e) {}
+              return;
+            }
+
+            // Tile is valid for placement: attempt to place if the player has torches
+            if ((playerState.torchCount || 0) > 0) {
+              const ok = _placeTorchAt(x, y, player.floor, !!isCorrect);
+              if (ok) {
+                try {
+                  playerState.torchCount = Math.max(
+                    0,
+                    (playerState.torchCount || 0) - 1
+                  );
+                } catch (e) {}
+                try {
+                  showCustomAlert("松明を設置した");
+                } catch (e) {}
+
+                // after placing, check win condition: 6 torches all on torch_correct tiles
+                try {
+                  let correctCount = 0;
+                  for (const k of Object.keys(window.__torches || {})) {
+                    const t = window.__torches[k];
+                    if (t && t.isCorrect) correctCount++;
+                  }
+                  if (correctCount >= 6) {
+                    try {
+                      // warp player to (5,1,6)
+                      player.teleport(5, 1, 6);
+                      showCustomAlert(
+                        "石化が無効化され、メデューサを討伐する準備が整った。"
+                      );
+                    } catch (e) {}
+                  }
+                } catch (e) {}
+              }
+            } else {
+              // Player has no torches to place — show helpful guidance
+              try {
+                showCustomAlert(
+                  "もう松明を持っていない、すでに置いてある松明の上でAボタンを押すことで回収できる"
+                );
+              } catch (e) {}
+            }
+            return;
           }
-        } else {
-          // Player has no torches to place — show helpful guidance
-          try {
-            showCustomAlert(
-              "もう松明を持っていない、すでに置いてある松明の上でAボタンを押すことで回収できる"
-            );
-          } catch (e) {}
-        }
-        return;
+        } catch (e) {}
       }
     } catch (e) {}
 

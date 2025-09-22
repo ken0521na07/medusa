@@ -302,7 +302,11 @@ function _ensureMagicUI() {
         try {
           const fromF = Number(floor);
           const toF = Number(candidate.dest.f);
-          const defaultMsg = `「エレベ」を唱え、${fromF}Fから${toF}Fに移動した。`;
+          const fmt = (n) =>
+            typeof n === "number" && n === 0 ? "地下1階" : `${n}F`;
+          const defaultMsg = `「エレベ」を唱え、${fmt(fromF)}から${fmt(
+            toF
+          )}に移動した。`;
 
           // Special first-time messages for specific transitions
           const special = {
