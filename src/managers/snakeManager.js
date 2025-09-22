@@ -418,12 +418,23 @@ export function resetPositions() {
     for (const s of snakes) {
       try {
         s.index = typeof s.initialIndex === "number" ? s.initialIndex : 0;
-        s.dead = false;
+        // if a snake was killed by a statue, preserve its dead state and texture
+        if (s.killedByStatue) {
+          s.dead = true;
+        } else {
+          s.dead = false;
+        }
         try {
           if (s.sprite && s.sprite.sprite) {
-            s.sprite.sprite.texture = PIXI.Texture.from(
-              s.mode === "static" ? "img/snake_static.png" : "img/snake.png"
-            );
+            // choose texture based on state: dead (any reason) -> dead texture,
+            // otherwise static vs normal
+            if (s.dead) {
+              s.sprite.sprite.texture = PIXI.Texture.from("img/snake_dead.png");
+            } else {
+              s.sprite.sprite.texture = PIXI.Texture.from(
+                s.mode === "static" ? "img/snake_static.png" : "img/snake.png"
+              );
+            }
             s.sprite.sprite.visible = s.floor === mapService.getFloor();
             s.sprite.updatePixelPosition();
           }
@@ -442,6 +453,7 @@ export function serialize() {
       index: s.index,
       mode: s.mode,
       dead: !!s.dead,
+      killedByStatue: !!s.killedByStatue,
       initialIndex: typeof s.initialIndex === "number" ? s.initialIndex : 0,
     }));
   } catch (e) {
@@ -473,6 +485,7 @@ export function deserialize(arr) {
         });
         if (n) {
           n.dead = !!item.dead;
+          n.killedByStatue = !!item.killedByStatue;
           n.initialIndex =
             typeof item.initialIndex === "number"
               ? item.initialIndex
@@ -502,6 +515,7 @@ export function killSnakeAt(x, y, floor) {
         const pos = s.path && s.path[s.index];
         if (pos && pos.x === x && pos.y === y) {
           s.dead = true;
+          s.killedByStatue = true;
           try {
             if (s.sprite && s.sprite.sprite) {
               s.sprite.sprite.texture = PIXI.Texture.from("img/snake_dead.png");

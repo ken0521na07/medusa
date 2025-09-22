@@ -171,7 +171,7 @@ export default class Player extends GameObject {
       } catch (e) {}
       try {
         // teleport to recorded start position for the current floor if present
-        const floor = this.floor || START_FLOOR;
+        const floor = typeof this.floor === "number" ? this.floor : START_FLOOR;
         const start = this.startPositions && this.startPositions[floor];
         if (
           start &&
@@ -180,8 +180,8 @@ export default class Player extends GameObject {
         ) {
           this.teleport(start.x, start.y, floor);
         } else {
-          // fallback to global START_* constants
-          this.teleport(START_POS_X, START_POS_Y, START_FLOOR);
+          // fallback to global START_* constants but keep the fallen floor so B1F deaths don't send to 1F
+          this.teleport(START_POS_X, START_POS_Y, floor);
         }
       } catch (e) {}
     };
