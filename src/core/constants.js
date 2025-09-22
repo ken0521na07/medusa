@@ -664,9 +664,9 @@ export const SNAKE_DEFS = {
       ],
       startIndex: 0,
     },
-    // B1F: inner clockwise loop (snake A) starting at (10,7)
+    // B1F: inner unclockwise loop (snake A) starting at (10,7)
     {
-      mode: "clock",
+      mode: "unclock",
       path: [
         { x: 10, y: 7 },
         { x: 10, y: 8 },
@@ -679,9 +679,9 @@ export const SNAKE_DEFS = {
       ],
       startIndex: 0,
     },
-    // B1F: inner clockwise loop (snake B) starting at (8,9)
+    // B1F: inner unclockwise loop (snake B) starting at (8,9)
     {
-      mode: "clock",
+      mode: "unclock",
       path: [
         { x: 10, y: 7 },
         { x: 10, y: 8 },

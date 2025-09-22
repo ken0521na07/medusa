@@ -57,12 +57,9 @@ function _ensureSpritesMatchMap() {
 function makeGameObjectForSnake(snakeDef) {
   // use static image for 'static' mode, red image for 'unclock' mode, default otherwise
   // Prefer using the normal snake image for static snakes to avoid requiring
-  // an additional file. Use red image for 'unclock' mode, default otherwise.
   let imgPath = "img/snake.png";
   if (snakeDef && snakeDef.mode === "static") {
     imgPath = "img/snake_static.png";
-  } else if (snakeDef && snakeDef.mode === "unclock") {
-    imgPath = "img/snake_red.png";
   }
   const g = new GameObject(
     snakeDef.path[snakeDef.index].x,
@@ -114,7 +111,6 @@ export async function initSnakes(appLayers, { autoFromMap = true } = {}) {
       // load images we actually ship: normal, red and dead variants
       await loadAssets([
         "img/snake.png",
-        "img/snake_red.png",
         "img/snake_static.png",
         "img/snake_dead.png",
       ]);
