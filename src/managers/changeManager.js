@@ -671,7 +671,7 @@ export function openChangeModal() {
           } catch (e) {}
         } catch (e) {}
       } else if (target === "クッショ") {
-        // Special-case: クッショ supports only numeric +1 globally
+        // Special-case: クッショ supports only numeric +1 and should be stored per-floor
         if (effect !== "数字増加") {
           invalid();
           return;
@@ -682,11 +682,26 @@ export function openChangeModal() {
           invalid();
           return;
         }
-        // persist globally; accumulate if already present
-        window.__changeState.global["クッショ"] = window.__changeState.global[
-          "クッショ"
-        ] || { type: "増加", amount: 0 };
-        window.__changeState.global["クッショ"].amount += num;
+        // ensure per-floor container exists
+        window.__changeStateByFloor = window.__changeStateByFloor || {};
+        window.__changeStateByFloor[floor] =
+          window.__changeStateByFloor[floor] || {};
+
+        // Persist only per-floor so cushion changes do NOT affect other floors.
+        // Accumulate amount for this floor.
+        window.__changeStateByFloor[floor]["クッショ"] = window
+          .__changeStateByFloor[floor]["クッショ"] || {
+          type: "増加",
+          amount: 0,
+        };
+        window.__changeStateByFloor[floor]["クッショ"].amount += num;
+
+        try {
+          console.log("[change] cushion applied per-floor (no global)", {
+            floor,
+            perFloor: window.__changeStateByFloor[floor]["クッショ"],
+          });
+        } catch (e) {}
       } else {
         // For other spells, accept numeric/meaning changes and save globally
         if (effect === "数字増加") {
