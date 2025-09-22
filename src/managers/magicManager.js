@@ -73,8 +73,18 @@ function _ensureMagicUI() {
     return currentFloor + defaultDelta;
   };
 
+  const clearMagicInput = () => {
+    try {
+      magicInput.value = "";
+    } catch (e) {}
+  };
+
   const checkMagic = () => {
     const raw = normalize(magicInput.value);
+    // Clear input whenever a magic is attempted so UI resets for next entry
+    try {
+      magicInput.value = "";
+    } catch (e) {}
     const player = window.__playerInstance;
     const x = player ? player.gridX : null;
     const y = player ? player.gridY : null;
@@ -485,10 +495,17 @@ function _ensureMagicUI() {
     let effectiveCushionSteps = 3; // default
     let cushionChangeCfg = null;
     try {
-      cushionChangeCfg =
-        window.__changeState &&
-        window.__changeState.global &&
-        window.__changeState.global["クッショ"];
+      // Prefer per-floor チェンジ overrides; fall back to global for backward compat
+      if (window.__changeStateByFloor && window.__changeStateByFloor[floor]) {
+        cushionChangeCfg =
+          window.__changeStateByFloor[floor]["クッショ"] || null;
+      }
+      if (!cushionChangeCfg) {
+        cushionChangeCfg =
+          window.__changeState &&
+          window.__changeState.global &&
+          window.__changeState.global["クッショ"];
+      }
       if (
         cushionChangeCfg &&
         cushionChangeCfg.type === "増加" &&
@@ -595,18 +612,22 @@ function _ensureMagicUI() {
     }
   };
 
+  // ensure submit and key handlers clear input (submit already calls checkMagic)
   magicSubmit.addEventListener("click", checkMagic);
   magicInput.addEventListener("keydown", (e) => {
     try {
-      const _isComposing = e.isComposing || false;
-      let _ignoreNextEnter = false;
       if (e.key === "Enter") {
-        if (_isComposing || _ignoreNextEnter || e.isComposing) return;
         checkMagic();
       }
-    } catch (err) {}
+    } catch (e) {}
   });
 
+  // also clear input when opening magic modal elsewhere: expose a global helper used by uiSetup
+  try {
+    window.__clearMagicInput = clearMagicInput;
+  } catch (e) {}
+
+  // ensure magicSubmit click also clears input after processing (redundant but defensive)
   magicSubmit.addEventListener("click", () => {
     try {
       magicInput.value = "";

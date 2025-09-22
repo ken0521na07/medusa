@@ -572,7 +572,42 @@ export async function setupUI() {
             } else {
               // show pickup alert: "(title)を手に入れた"
               try {
-                showCustomAlert((info.title || "情報") + "を手に入れた");
+                // If this info is one of the 5F image pieces, and obtaining it completes
+                // all four (info_5_1..info_5_4), then after the user closes the pickup
+                // alert show a follow-up alert guiding them to open 封筒D.
+                const is5fPiece =
+                  infoKey === "info_5_1" ||
+                  infoKey === "info_5_2" ||
+                  infoKey === "info_5_3" ||
+                  infoKey === "info_5_4";
+                if (is5fPiece) {
+                  const got1 =
+                    allInfo && allInfo.info_5_1 && allInfo.info_5_1.unlocked;
+                  const got2 =
+                    allInfo && allInfo.info_5_2 && allInfo.info_5_2.unlocked;
+                  const got3 =
+                    allInfo && allInfo.info_5_3 && allInfo.info_5_3.unlocked;
+                  const got4 =
+                    allInfo && allInfo.info_5_4 && allInfo.info_5_4.unlocked;
+                  const allGot = got1 && got2 && got3 && got4;
+                  if (allGot) {
+                    showCustomAlert((info.title || "情報") + "を手に入れた", {
+                      onClose: () => {
+                        try {
+                          showCustomAlert("封筒Dを開こう");
+                        } catch (e) {
+                          try {
+                            window.alert("封筒Dを開こう");
+                          } catch (e2) {}
+                        }
+                      },
+                    });
+                  } else {
+                    showCustomAlert((info.title || "情報") + "を手に入れた");
+                  }
+                } else {
+                  showCustomAlert((info.title || "情報") + "を手に入れた");
+                }
               } catch (e) {
                 try {
                   window.alert((info.title || "情報") + "を手に入れた");
@@ -2004,6 +2039,7 @@ function openMoveModal() {
             st.obj.gridX = destX;
             st.obj.gridY = destY;
             // ensure sprite is visible for the current viewed floor
+
             st.obj.sprite.visible = st.floor === mapService.getFloor();
             // change to broken statue image and ensure texture is applied
             try {

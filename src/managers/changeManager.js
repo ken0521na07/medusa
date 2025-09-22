@@ -82,7 +82,7 @@ export function openChangeModal() {
     // プルダウン2
     const select2 = document.createElement("select");
     select2.id = "change-effect-select";
-    ["数字増加", "意味反転"].forEach((v) => {
+    ["数字増加", "意味反転", "リセット"].forEach((v) => {
       const o = document.createElement("option");
       o.value = v;
       o.textContent = v;
@@ -215,6 +215,18 @@ export function openChangeModal() {
     select1.addEventListener("change", updateFieldVisibility);
     select2.addEventListener("change", updateFieldVisibility);
 
+    // helper to reset modal fields to defaults
+    function resetModalFields() {
+      try {
+        select1.value = "エレベ";
+        select2.value = "意味反転";
+        select3.value = "1";
+        dirSelect.value = "上";
+        moveSelect.value = "同じ";
+        updateFieldVisibility();
+      } catch (e) {}
+    }
+
     // initialize visibility/state based on current player floor and change state
     try {
       const player = window.__playerInstance;
@@ -228,9 +240,15 @@ export function openChangeModal() {
     // apply initial field visibility so the modal reflects current state
     try {
       updateFieldVisibility();
+      // ensure fields are at defaults when first created
+      resetModalFields();
     } catch (e) {}
 
     close.addEventListener("click", () => {
+      try {
+        // reset inputs when modal closed so previous selections are not preserved
+        resetModalFields();
+      } catch (e) {}
       modal.style.display = "none";
     });
 
@@ -289,6 +307,65 @@ export function openChangeModal() {
       const floorCfg = perFloorConfig[floor] || null;
       const targetCfg = floorCfg ? floorCfg[target] : null;
 
+      // Handle Reset effect early so it's accepted regardless of per-floor config
+      if (effect === "リセット") {
+        try {
+          window.__changeState = window.__changeState || {
+            elevatorPerFloor: {},
+            global: {},
+          };
+          window.__changeStateByFloor = window.__changeStateByFloor || {};
+          // ensure per-floor object exists so we can delete the key
+          window.__changeStateByFloor[floor] =
+            window.__changeStateByFloor[floor] || {};
+
+          if (target === "エレベ") {
+            if (window.__changeState.elevatorPerFloor)
+              delete window.__changeState.elevatorPerFloor[floor];
+          } else if (target === "ムーブ") {
+            delete window.__changeStateByFloor[floor]["ムーブ"];
+            if (window.__changeState.global) {
+              delete window.__changeState.global["ムーブ"];
+              delete window.__changeState.global["move"];
+            }
+          } else if (target === "クッショ") {
+            delete window.__changeStateByFloor[floor]["クッショ"];
+            if (window.__changeState.global)
+              delete window.__changeState.global["クッショ"];
+          } else {
+            // generic target name may map to keys differently; remove per-floor and global
+            delete window.__changeStateByFloor[floor][target];
+            if (window.__changeState.global)
+              delete window.__changeState.global[target];
+          }
+
+          // Refresh magic list UI if open
+          try {
+            const list = document.getElementById("magic-list");
+            if (list && typeof renderMagicList === "function")
+              renderMagicList(list);
+          } catch (e) {}
+
+          // Close keyword modal (magic modal) if open, then notify the player
+          try {
+            const keywordModal = document.getElementById("keyword-modal");
+            if (keywordModal) keywordModal.style.display = "none";
+          } catch (e) {}
+
+          setTimeout(() => {
+            try {
+              showCustomAlert("チェンジをリセットしました");
+            } catch (e) {
+              try {
+                showCustomAlert("チェンジをリセットしました");
+              } catch (e2) {}
+            }
+          }, 10);
+          modal.style.display = "none";
+          return;
+        } catch (e) {}
+      }
+
       // If nothing is configured for this floor/target, reject
       if (!targetCfg) {
         invalid();
@@ -311,6 +388,65 @@ export function openChangeModal() {
       } else {
         invalid();
         return;
+      }
+
+      // Handle Reset effect: clear per-floor change state for this target
+      if (effect === "リセット") {
+        try {
+          window.__changeState = window.__changeState || {
+            elevatorPerFloor: {},
+            global: {},
+          };
+          window.__changeStateByFloor = window.__changeStateByFloor || {};
+          // ensure per-floor object exists so we can delete the key
+          window.__changeStateByFloor[floor] =
+            window.__changeStateByFloor[floor] || {};
+
+          if (target === "エレベ") {
+            if (window.__changeState.elevatorPerFloor)
+              delete window.__changeState.elevatorPerFloor[floor];
+          } else if (target === "ムーブ") {
+            delete window.__changeStateByFloor[floor]["ムーブ"];
+            if (window.__changeState.global) {
+              delete window.__changeState.global["ムーブ"];
+              delete window.__changeState.global["move"];
+            }
+          } else if (target === "クッショ") {
+            delete window.__changeStateByFloor[floor]["クッショ"];
+            if (window.__changeState.global)
+              delete window.__changeState.global["クッショ"];
+          } else {
+            // generic target name may map to keys differently; remove per-floor and global
+            delete window.__changeStateByFloor[floor][target];
+            if (window.__changeState.global)
+              delete window.__changeState.global[target];
+          }
+
+          // Refresh magic list UI if open
+          try {
+            const list = document.getElementById("magic-list");
+            if (list && typeof renderMagicList === "function")
+              renderMagicList(list);
+          } catch (e) {}
+
+          // Close keyword modal (magic modal) if open, then notify the player
+          try {
+            const keywordModal = document.getElementById("keyword-modal");
+            if (keywordModal) keywordModal.style.display = "none";
+          } catch (e) {}
+
+          setTimeout(() => {
+            try {
+              showCustomAlert("チェンジをリセットしました");
+            } catch (e) {
+              try {
+                showCustomAlert("チェンジをリセットしました");
+              } catch (e2) {}
+            }
+          }, 10);
+          modal.style.display = "none";
+          return;
+        } catch (e) {}
       }
 
       // Apply based on target (existing behavior preserved, but only reached when validated above)
@@ -621,9 +757,31 @@ export function openChangeModal() {
           } catch (e2) {}
         }
       }, 10);
+      // reset fields so next open starts fresh
+      try {
+        resetModalFields();
+      } catch (e) {}
       modal.style.display = "none";
     });
   } else {
+    // when modal already exists, reset fields before showing to avoid preserving previous input
+    try {
+      const select1 = document.getElementById("change-target-select");
+      const select2 = document.getElementById("change-effect-select");
+      const select3 = document.getElementById("change-amount-select");
+      const dirSelect = document.getElementById("change-direction-select");
+      const moveSelect = document.getElementById("change-move-select");
+      if (select1) select1.value = "エレベ";
+      if (select2) select2.value = "意味反転";
+      if (select3) select3.value = "1";
+      if (dirSelect) dirSelect.value = "上";
+      if (moveSelect) moveSelect.value = "同じ";
+      // call updateFieldVisibility if available in this context
+      try {
+        const fn = window && window.__changeModalUpdateVisibility;
+        if (typeof fn === "function") fn();
+      } catch (e) {}
+    } catch (e) {}
     modal.style.display = "flex";
   }
 }
